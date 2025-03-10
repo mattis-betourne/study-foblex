@@ -1,0 +1,20 @@
+/* Styles globaux pour Foblex Flow */
+::ng-deep f-flow {
+  height: 100%;
+  width: 100%;
+}
+
+/* Styles pour les connexions */
+::ng-deep f-connection {
+  stroke: #666;
+  stroke-width: 2px;
+}
+
+/* Styles pour le fond quadrillé */
+::ng-deep f-background {
+  background-color: #f9fafb;
+  background-image: 
+    linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
