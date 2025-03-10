@@ -6,18 +6,33 @@ import {
   FExternalItemPreviewDirective 
 } from '@foblex/flow';
 
+/**
+ * Interface représentant une catégorie dans le Builder
+ */
 interface BuilderCategory {
+  /** Nom de la catégorie */
   name: string;
+  /** État d'expansion de la catégorie */
   expanded: boolean;
+  /** Items contenus dans la catégorie */
   items: BuilderItem[];
 }
 
+/**
+ * Interface représentant un item dans une catégorie du Builder
+ */
 interface BuilderItem {
+  /** Type de l'item (Client, Task, etc.) */
   type: string;
+  /** Icône Unicode utilisée pour l'item */
   icon: string;
+  /** Classe de couleur CSS pour l'item */
   color: string;
 }
 
+/**
+ * Composant pour la barre latérale de construction de flow
+ */
 @Component({
   selector: 'app-builder',
   standalone: true,
@@ -31,11 +46,16 @@ interface BuilderItem {
   styleUrls: ['./builder.component.css']
 })
 export class BuilderComponent implements OnInit {
+  /** État d'ouverture de la sidebar */
   @Input() isOpen = true;
+  /** Événement émis lors du changement d'état de la sidebar */
   @Output() toggleSidebar = new EventEmitter<boolean>();
+  /** Événement émis lors du début du drag d'un item */
   @Output() itemDragStart = new EventEmitter<string>();
+  /** Événement émis lors de la fin du drag d'un item */
   @Output() itemDragEnd = new EventEmitter<void>();
   
+  /** Catégories d'items disponibles dans le Builder */
   categories: BuilderCategory[] = [
     {
       name: 'Contacts',
@@ -62,6 +82,9 @@ export class BuilderComponent implements OnInit {
     }
   ];
   
+  /**
+   * Initialisation du composant
+   */
   ngOnInit(): void {
     // S'assurer que le Builder est ouvert par défaut
     if (!this.isOpen) {
@@ -70,28 +93,34 @@ export class BuilderComponent implements OnInit {
     }
   }
   
+  /**
+   * Bascule l'état d'expansion d'une catégorie
+   * @param category La catégorie à basculer
+   */
   toggleCategory(category: BuilderCategory): void {
     category.expanded = !category.expanded;
   }
   
+  /**
+   * Bascule l'état d'ouverture de la sidebar
+   */
   toggle(): void {
     this.isOpen = !this.isOpen;
     this.toggleSidebar.emit(this.isOpen);
   }
   
-  // Méthode pour démarrer le drag d'un élément
+  /**
+   * Méthode appelée au début du drag d'un item
+   * @param itemType Le type d'item en cours de drag
+   */
   onDragStart(itemType: string): void {
     console.log('Builder: drag started with item', itemType);
     this.itemDragStart.emit(itemType);
-    
-    // Ajouter un petit délai pour s'assurer que l'event est bien propagé
-    setTimeout(() => {
-      // Émettre à nouveau l'événement pour s'assurer qu'il est bien reçu
-      this.itemDragStart.emit(itemType);
-    }, 100);
   }
   
-  // Méthode pour terminer le drag d'un élément
+  /**
+   * Méthode appelée à la fin du drag d'un item
+   */
   onDragEnd(): void {
     console.log('Builder: drag ended');
     this.itemDragEnd.emit();

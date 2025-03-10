@@ -55,7 +55,8 @@
               fExternalItem 
               [fData]="item.type" 
               [fPreviewMatchSize]="true"
-              (pointerdown)="onDragStart(item.type)">
+              (pointerdown)="onDragStart(item.type)"
+              (dragend)="onDragEnd()">
               <div 
                 class="flex items-center p-3 rounded-md shadow-sm text-white hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                 [ngClass]="item.color">

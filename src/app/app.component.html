@@ -1,90 +1,13 @@
 <div class="h-screen w-screen overflow-hidden bg-gray-100 relative">
-  <!-- Sandbox pour le CRM -->
-  <div class="absolute inset-0" (pointerup)="onCanvasPointerUp($event)">
-    <f-flow #canvas fDraggable 
-            [attr.data-dragging]="draggingItemType ? 'true' : 'false'"
-            (fCreateNode)="onCreateNode($event)">
-      <f-canvas>
-        <!-- Les nœuds permanents -->
-        @for (node of nodes; track node.id) {
-          <div fNode 
-               fDragHandle 
-               [fNodePosition]="node.position" 
-               fNodeOutput 
-               [fOutputId]="'output_' + node.id" 
-               fOutputConnectableSide="right"
-               fNodeInput
-               [fInputId]="'input_' + node.id"
-               fInputConnectableSide="left"
-               [ngClass]="getNodeClass(node.type)">
-            <div class="p-3 flex items-center font-medium text-white">
-              <span class="mr-2 text-xl">{{ getNodeIcon(node.type) }}</span>
-              <span>{{ node.type }}</span>
-            </div>
-            <div class="p-3 bg-white text-gray-700">
-              {{ node.text }}
-            </div>
-          </div>
-        }
-        
-        <!-- Les nœuds temporaires (emplacements potentiels) -->
-        @for (node of temporaryNodes; track node.id) {
-          <div fNode 
-               [fNodePosition]="node.position" 
-               fNodeOutput 
-               [fOutputId]="'output_' + node.id" 
-               fOutputConnectableSide="right"
-               fNodeInput
-               [fInputId]="'input_' + node.id"
-               fInputConnectableSide="left"
-               class="min-w-[180px] rounded-md shadow-md overflow-hidden bg-gradient-to-r from-green-50 to-green-100 opacity-90 border-2 border-dashed border-green-500 cursor-pointer temporary-node hover:scale-105 hover:shadow-lg transition-all"
-               [attr.data-node-id]="node.id">
-            <div class="p-3 flex items-center font-medium text-white bg-green-500">
-              <span class="mr-2 text-xl">{{ getNodeIcon(node.type) }}</span>
-              <span>{{ node.type }}</span>
-            </div>
-            <div class="p-3 bg-white text-gray-700 flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-green-600 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>Drop here to connect</span>
-            </div>
-          </div>
-        }
-        
-        <!-- Connexions entre les nœuds permanents -->
-        @for (connection of connections; track connection.id) {
-          <f-connection 
-            [fOutputId]="connection.sourceId" 
-            [fInputId]="connection.targetId">
-          </f-connection>
-        }
-        
-        <!-- Connexions temporaires -->
-        @for (connection of temporaryConnections; track connection.id) {
-          <f-connection 
-            [fOutputId]="connection.sourceId" 
-            [fInputId]="connection.targetId"
-            class="opacity-80 temporary-connection"
-            style="--f-connection-stroke: #10b981; --f-connection-stroke-width: 2px; --f-connection-stroke-dasharray: 5,3;">
-          </f-connection>
-        }
-      </f-canvas>
-      
-      <!-- Ajout d'un fond quadrillé -->
-      <f-background></f-background>
-      
-      <!-- Ajout de la fonctionnalité de zoom -->
-      <div fZoom></div>
-    </f-flow>
-  </div>
+  <!-- Conteneur principal du flow diagram -->
+  <app-flow-container></app-flow-container>
   
   <!-- Composant Builder (sidebar) -->
   <app-builder 
     [isOpen]="isSidebarOpen" 
     (toggleSidebar)="toggleSidebar($event)"
-    (itemDragStart)="onDragStart($event)"
-    (itemDragEnd)="onDragEnd()">
+    (itemDragStart)="onItemDragStart($event)"
+    (itemDragEnd)="onItemDragEnd()">
   </app-builder>
 </div>
 
