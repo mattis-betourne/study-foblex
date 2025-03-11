@@ -464,13 +464,21 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   onCreateConnection(event: any): void {
     console.log('Connection creation event:', event);
     
+    // Vérifier que les IDs de source et de cible sont définis
+    if (!event || !event.outputId || !event.inputId) {
+      console.warn('Tentative de création de connexion avec des points non valides');
+      if (event && event.prevent) {
+        event.prevent();
+      }
+      return;
+    }
+    
     // Utiliser la méthode centralisée pour vérifier si la connexion est autorisée
     if (!this.flowService.canConnect(event.outputId, event.inputId)) {
       console.warn('Connexion non autorisée selon les règles métier');
       event.prevent();
       
-      // Vous pouvez toujours ajouter une logique pour afficher un message spécifique
-      // en récupérant les nœuds concernés pour des messages plus détaillés
+      // Récupérer les nœuds concernés pour des messages plus détaillés
       const sourceId = event.outputId.replace('output_', '');
       const targetId = event.inputId.replace('input_', '');
       const sourceNode = this.flowService.nodes.find(node => node.id === sourceId);

@@ -138,15 +138,18 @@ export class BinarySplitStrategy implements TemporaryNodeStrategy {
     const newNodeCanHaveInputs = getDefaultMaxInputs(itemType) > 0;
     
     if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
+      // Positions horizontales avec espacement vers le haut et le bas
       // Calculer des positions pour les deux sorties du BinarySplit
+      const horizontalOffset = 350;
+      const verticalOffset = 120;
       const positions = [
-        { // Position en haut à droite
-          x: node.position.x + 250,
-          y: node.position.y - 80
+        { // Position en haut à droite (plus espacée)
+          x: node.position.x + horizontalOffset,
+          y: node.position.y - verticalOffset
         },
-        { // Position en bas à droite
-          x: node.position.x + 250,
-          y: node.position.y + 80
+        { // Position en bas à droite (plus espacée)
+          x: node.position.x + horizontalOffset,
+          y: node.position.y + verticalOffset
         }
       ];
       
@@ -197,12 +200,12 @@ export class BinarySplitStrategy implements TemporaryNodeStrategy {
     const newNodeCanHaveOutputs = getDefaultMaxOutputs(itemType) > 0;
     
     if (canAcceptMoreInputs && newNodeCanHaveOutputs) {
-      const bottomTempNode: CrmNode = {
+      const inputTempNode: CrmNode = {
         id: `temp_bottom_${generateGuid()}`,
         type: itemType,
         text: `${itemType} (Connexion à l'entrée)`,
         position: { 
-          x: node.position.x - 250, 
+          x: node.position.x - 350,
           y: node.position.y
         },
         maxInputs: getDefaultMaxInputs(itemType),
@@ -210,16 +213,16 @@ export class BinarySplitStrategy implements TemporaryNodeStrategy {
       };
       
       // Vérifier que les positions ne se superposent pas
-      if (isPositionFree(bottomTempNode.position)) {
-        result.nodes.push(bottomTempNode);
+      if (isPositionFree(inputTempNode.position)) {
+        result.nodes.push(inputTempNode);
         
         // Créer une connexion temporaire
-        const bottomConnection: Connection = {
+        const inputConnection: Connection = {
           id: `temp_conn_${generateGuid()}`,
-          sourceId: `output_${bottomTempNode.id}`,
+          sourceId: `output_${inputTempNode.id}`,
           targetId: `input_${node.id}`
         };
-        result.connections.push(bottomConnection);
+        result.connections.push(inputConnection);
       }
     }
     
@@ -270,13 +273,16 @@ export class MultiSplitStrategy implements TemporaryNodeStrategy {
     const newNodeCanHaveInputs = getDefaultMaxInputs(itemType) > 0;
     
     if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
-      // Calculer des positions pour les branches du MultiSplit
-      // Disposition en éventail : un nœud au milieu et les autres autour
-      const angleStep = Math.PI / (maxOutputs + 1);
-      const radius = 200; // Distance par rapport au nœud MultiSplit
+      // Disposition horizontale avec décalage vertical
+      // Tous les nœuds à la même distance horizontale, mais à différentes hauteurs
+      const horizontalOffset = 350; // Distance horizontale uniforme
+      const verticalStep = 120;     // Espacement vertical entre chaque branche
+      
+      // Calculer la position verticale de départ pour centrer les branches
+      const startY = node.position.y - ((maxOutputs - 1) * verticalStep) / 2;
       
       // Déterminer quelles positions sont déjà occupées
-      const usedAngles = new Set<number>();
+      const usedIndices = new Set<number>();
       
       // Trouver les nœuds cibles des connexions existantes
       for (const conn of existingOutputConnections) {
@@ -284,36 +290,33 @@ export class MultiSplitStrategy implements TemporaryNodeStrategy {
         const targetNode = this.findConnectedNode(targetNodeId);
         
         if (targetNode) {
-          // Calculer l'angle approximatif par rapport au MultiSplit
-          const dx = targetNode.position.x - node.position.x;
-          const dy = targetNode.position.y - node.position.y;
-          const angle = Math.atan2(dy, dx);
-          
-          // Trouver l'index de l'angle le plus proche
-          const normalizedAngle = angle < 0 ? angle + 2 * Math.PI : angle;
-          const angleIndex = Math.round(normalizedAngle / angleStep) - 1;
-          
-          if (angleIndex >= 0 && angleIndex < maxOutputs) {
-            usedAngles.add(angleIndex);
+          // Déterminer quel indice de branche est le plus proche de ce nœud
+          for (let i = 0; i < maxOutputs; i++) {
+            const branchY = startY + i * verticalStep;
+            // Si c'est à peu près la même position verticale, considérer comme utilisée
+            if (Math.abs(targetNode.position.y - branchY) < verticalStep / 2) {
+              usedIndices.add(i);
+              break;
+            }
           }
         }
       }
       
       // Créer des nœuds temporaires pour les positions disponibles
       for (let i = 0; i < maxOutputs; i++) {
-        if (!usedAngles.has(i)) {
-          // Calculer l'angle et la position
-          const angle = (i + 1) * angleStep;
-          const x = node.position.x + radius * Math.cos(angle);
-          const y = node.position.y + radius * Math.sin(angle);
+        if (!usedIndices.has(i)) {
+          const position = {
+            x: node.position.x + horizontalOffset,
+            y: startY + i * verticalStep
+          };
           
           // Vérifier que la position est libre
-          if (isPositionFree({ x, y })) {
+          if (isPositionFree(position)) {
             const multiSplitTempNode: CrmNode = {
               id: `temp_multisplit_${i}_${generateGuid()}`,
               type: itemType,
               text: `${itemType} (Branche ${i + 1})`,
-              position: { x, y },
+              position: position,
               maxInputs: getDefaultMaxInputs(itemType),
               maxOutputs: getDefaultMaxOutputs(itemType)
             };
@@ -341,7 +344,7 @@ export class MultiSplitStrategy implements TemporaryNodeStrategy {
         type: itemType,
         text: `${itemType} (Connexion à l'entrée)`,
         position: { 
-          x: node.position.x - 250, 
+          x: node.position.x - 350,
           y: node.position.y
         },
         maxInputs: getDefaultMaxInputs(itemType),

@@ -645,6 +645,11 @@ export class FlowService {
   }
 
   canConnect(source: string, target: string): boolean {
+    // Vérifier que les arguments sont valides
+    if (!source || !target) {
+      return false;
+    }
+
     // Vérifier les règles métier pour les connexions
     const sourceNodeId = source.replace('output_', '');
     const targetNodeId = target.replace('input_', '');
