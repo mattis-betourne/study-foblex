@@ -1,14 +1,19 @@
 import { Injectable, ChangeDetectorRef, inject, DestroyRef } from '@angular/core';
-import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { generateGuid } from '@foblex/utils';
 import { CrmNode, Connection } from '../models/crm.models';
 import { HistoryService } from './history.service';
 import { ZoomService } from './zoom.service';
 import { TemporaryNodeService } from './temporary-node.service';
 import { FlowStateService } from './flow-state.service';
+import { NodeTypeRegistry } from './node-type-registry.service';
 
 /**
- * Service responsable de la gestion du flow diagram (nœuds, connexions, etc.)
+ * Service responsable de l'orchestration des opérations métier du flow diagram
+ * Se concentre sur les opérations qui impliquent plusieurs services
+ * ou qui nécessitent une logique métier complexe
+ * 
+ * Les opérations simples d'état doivent utiliser directement FlowStateService
  */
 @Injectable({
   providedIn: 'root'
@@ -19,68 +24,39 @@ export class FlowService {
   private readonly zoomService = inject(ZoomService);
   private readonly temporaryNodeService = inject(TemporaryNodeService);
   private readonly flowStateService = inject(FlowStateService);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly nodeTypeRegistry = inject(NodeTypeRegistry);
 
-  // Exposer les computed signals du service d'état
-  readonly nodes = this.flowStateService.nodes;
-  readonly connections = this.flowStateService.connections;
-  readonly temporaryNodes = this.flowStateService.temporaryNodes;
-  readonly temporaryConnections = this.flowStateService.temporaryConnections;
-
-  // Observables pour les composants (compatibilité)
+  // Observables pour les composants (compatibilité et facilité d'accès)
   readonly nodes$ = toObservable(this.flowStateService.nodes);
   readonly connections$ = toObservable(this.flowStateService.connections);
   readonly temporaryNodes$ = toObservable(this.flowStateService.temporaryNodes);
   readonly temporaryConnections$ = toObservable(this.flowStateService.temporaryConnections);
-  readonly draggingItemType$ = this.temporaryNodeService.draggingItemType$;
-  readonly isCreatingNode$ = this.temporaryNodeService.isCreatingNode$;
+  readonly draggingItemType$ = toObservable(this.flowStateService.draggingItemType);
+  readonly isCreatingNode$ = toObservable(this.flowStateService.isCreatingNode);
+  readonly selectedNodeId$ = toObservable(this.flowStateService.selectedNodeId);
+  readonly selectedConnectionId$ = toObservable(this.flowStateService.selectedConnectionId);
 
   constructor() {
-    // Initialiser les fonctions de support pour le service de nœuds temporaires
-    this.temporaryNodeService.setSupport(
-      this.isPositionFree.bind(this),
-      this.getDefaultMaxInputs.bind(this),
-      this.getDefaultMaxOutputs.bind(this),
-      () => this.nodes(),
-      () => this.connections()
-    );
-
-    // Capturer l'état initial après l'initialisation des données,
-    // mais seulement si nous avons déjà des données
-    setTimeout(() => {
-      // Ne sauvegarder l'état initial que s'il y a effectivement des données
-      if (this.nodes().length > 0 || this.connections().length > 0) {
-        this.historyService.saveState();
-      }
-    }, 0);
+    console.log('FlowService initialized');
   }
 
   /**
-   * @returns Le type d'élément en cours de drag
+   * Commence le processus de glisser-déposer d'un type d'élément
+   * @param itemType Type d'élément à glisser-déposer
    */
-  get draggingItemType(): string | null {
-    return this.temporaryNodeService.draggingItemType;
+  startDragging(itemType: string): void {
+    console.log(`Starting drag for item type: ${itemType}`);
+    this.flowStateService.updateDraggingItemType(itemType);
+    this.temporaryNodeService.createTemporaryNodes(itemType);
   }
 
   /**
-   * @param value Le type d'élément en cours de drag
+   * Termine le processus de glisser-déposer
    */
-  set draggingItemType(value: string | null) {
-    this.temporaryNodeService.draggingItemType = value;
-  }
-
-  /**
-   * @returns Si un nœud est en cours de création
-   */
-  get isCreatingNode(): boolean {
-    return this.temporaryNodeService.isCreatingNode;
-  }
-
-  /**
-   * @param value Si un nœud est en cours de création
-   */
-  set isCreatingNode(value: boolean) {
-    this.temporaryNodeService.isCreatingNode = value;
+  endDragging(): void {
+    console.log('Ending drag operation');
+    this.flowStateService.updateDraggingItemType(null);
+    this.temporaryNodeService.clearTemporaryElements();
   }
 
   /**
@@ -121,25 +97,21 @@ export class FlowService {
   }
 
   /**
-   * Ajoute un nouveau nœud au diagramme
+   * Ajoute un nouveau nœud au diagramme et sauvegarde l'état
    * @param node Le nœud à ajouter
    */
-  addNode(node: CrmNode): void {
-    const updatedNodes = [...this.flowStateService.nodes(), node];
-    this.flowStateService.updateNodes(updatedNodes);
-    
+  addNodeAndSave(node: CrmNode): void {
+    this.flowStateService.addNode(node);
     // Sauvegarder l'état après modification
     this.historyService.saveState();
   }
 
   /**
-   * Ajoute une nouvelle connexion au diagramme
+   * Ajoute une nouvelle connexion au diagramme et sauvegarde l'état
    * @param connection La connexion à ajouter
    */
-  addConnection(connection: Connection): void {
-    const updatedConnections = [...this.flowStateService.connections(), connection];
-    this.flowStateService.updateConnections(updatedConnections);
-    
+  addConnectionAndSave(connection: Connection): void {
+    this.flowStateService.addConnection(connection);
     // Sauvegarder l'état après modification
     this.historyService.saveState();
   }
@@ -194,36 +166,6 @@ export class FlowService {
   }
 
   /**
-   * Vérifie si une position est libre (pas de nœuds à proximité)
-   * @param position Position à vérifier
-   * @returns true si la position est libre
-   * @private
-   */
-  private isPositionFree(position: {x: number, y: number}): boolean {
-    // Considérer une marge de 50px autour des nœuds existants
-    const margin = 50;
-    return !this.flowStateService.nodes().some(node => 
-      Math.abs(node.position.x - position.x) < margin && 
-      Math.abs(node.position.y - position.y) < margin
-    );
-  }
-
-  /**
-   * Nettoie les éléments temporaires
-   */
-  clearTemporaryElements(): void {
-    this.temporaryNodeService.clearTemporaryElements();
-  }
-
-  /**
-   * Crée des nœuds temporaires pour les emplacements potentiels de connexion
-   * @param itemType Le type d'élément en cours de drag
-   */
-  createTemporaryNodes(itemType: string): void {
-    this.temporaryNodeService.createTemporaryNodes(itemType);
-  }
-
-  /**
    * Traite la fin d'un glisser-déposer sur un nœud temporaire
    * @param temporaryNodeId Identifiant du nœud temporaire
    * @param changeDetectorRef Référence au détecteur de changements
@@ -244,14 +186,14 @@ export class FlowService {
     const newNode: CrmNode = {
       id: newNodeId,
       type: nodeType,
-      text: `New ${nodeType}`,
+      text: this.nodeTypeRegistry.getDefaultText(nodeType),
       position: position,
-      maxInputs: this.getDefaultMaxInputs(nodeType),
-      maxOutputs: this.getDefaultMaxOutputs(nodeType)
+      maxInputs: this.flowStateService.getDefaultMaxInputs(nodeType),
+      maxOutputs: this.flowStateService.getDefaultMaxOutputs(nodeType)
     };
     
     // Ajouter le nœud
-    this.addNode(newNode);
+    this.addNodeAndSave(newNode);
     
     // Créer les connexions
     connections.forEach(conn => {
@@ -275,7 +217,7 @@ export class FlowService {
         targetId: target
       };
       
-      this.addConnection(newConnection);
+      this.addConnectionAndSave(newConnection);
     });
     
     // Forcer la mise à jour du composant
@@ -288,7 +230,7 @@ export class FlowService {
    * Annule la dernière action
    */
   undo(): void {
-    this.clearTemporaryElements();
+    this.temporaryNodeService.clearTemporaryElements();
     this.historyService.undo();
   }
 
@@ -296,92 +238,16 @@ export class FlowService {
    * Rétablit l'action annulée
    */
   redo(): void {
-    this.clearTemporaryElements();
+    this.temporaryNodeService.clearTemporaryElements();
     this.historyService.redo();
   }
 
   /**
-   * Sauvegarde l'état actuel dans l'historique
-   * @private
+   * Vérifie si deux nœuds peuvent être connectés
+   * @param source Identifiant de la source
+   * @param target Identifiant de la cible
+   * @returns true si la connexion est possible
    */
-  private saveState(): void {
-    this.historyService.saveState();
-  }
-
-  /**
-   * Retourne le nombre maximum d'entrées autorisées par défaut pour un type de nœud
-   * @param type Le type de nœud
-   * @returns Le nombre maximum d'entrées
-   */
-  private getDefaultMaxInputs(type: string): number {
-    switch (type) {
-      // Targeting
-      case 'Audience':
-        return 0;  // Une audience n'a pas d'entrée
-      
-      // Execution
-      case 'BinarySplit':
-        return 1;  // Un séparateur binaire a exactement 1 entrée
-      case 'MultiSplit':
-        return 1;  // Un séparateur multiple a exactement 1 entrée
-      
-      // Communication
-      case 'Full Screen':
-        return 1;  // Une notification full screen a 1 entrée
-      case 'SMS':
-        return 1;  // Un SMS a 1 entrée
-      case 'Push':
-        return 1;  // Une notification push a 1 entrée
-      case 'Email':
-        return 1;  // Un email a 1 entrée
-      
-      // Rewards
-      case 'Freebet':
-        return 1;  // Un freebet a 1 entrée
-      
-      // Fallback
-      default:
-        return 1;  // Par défaut, 1 entrée
-    }
-  }
-
-  /**
-   * Retourne le nombre maximum de sorties autorisées par défaut pour un type de nœud
-   * @param type Le type de nœud
-   * @returns Le nombre maximum de sorties
-   */
-  private getDefaultMaxOutputs(type: string): number {
-    switch (type) {
-      // Targeting
-      case 'Audience':
-        return 1;  // Une audience a 1 sortie maximum
-      
-      // Execution
-      case 'BinarySplit':
-        return 2;  // Un séparateur binaire a exactement 2 sorties
-      case 'MultiSplit':
-        return 5;  // Un séparateur multiple peut avoir jusqu'à 5 sorties
-      
-      // Communication
-      case 'Full Screen':
-        return 1;  // Une notification full screen a 1 sortie
-      case 'SMS':
-        return 1;  // Un SMS a 1 sortie
-      case 'Push':
-        return 1;  // Une notification push a 1 sortie
-      case 'Email':
-        return 1;  // Un email a 1 sortie
-      
-      // Rewards
-      case 'Freebet':
-        return 1;  // Un freebet a 1 sortie
-      
-      // Fallback
-      default:
-        return 1;  // Par défaut, 1 sortie
-    }
-  }
-
   canConnect(source: string, target: string): boolean {
     // Vérifier que les arguments sont valides
     if (!source || !target) {
@@ -410,13 +276,8 @@ export class FlowService {
     }
 
     // Vérifier les limites de connexions pour le nœud source
-    const existingOutputs = this.flowStateService.connections().filter(
-      (conn: Connection) => conn.sourceId === source
-    );
-    
-    const existingInputs = this.flowStateService.connections().filter(
-      (conn: Connection) => conn.targetId === target
-    );
+    const existingOutputs = this.flowStateService.getConnectionsFrom(source);
+    const existingInputs = this.flowStateService.getConnectionsTo(target);
 
     // Vérifier les limites pour les sorties
     if (sourceNode.maxOutputs !== undefined && sourceNode.maxOutputs !== -1 && 

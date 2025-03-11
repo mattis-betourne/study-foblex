@@ -144,7 +144,9 @@ export class HistoryService {
       nodes: structuredClone(state.nodes),
       connections: structuredClone(state.connections),
       zoom: structuredClone(state.zoom),
-      temporaryElements: structuredClone(state.temporaryElements)
+      temporaryElements: structuredClone(state.temporaryElements),
+      selectedNodeId: state.selectedNodeId,
+      selectedConnectionId: state.selectedConnectionId
     };
   }
 } 

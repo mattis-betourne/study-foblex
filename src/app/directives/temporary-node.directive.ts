@@ -1,4 +1,4 @@
-import { Directive, ElementRef, HostListener, Input, Output, EventEmitter } from '@angular/core';
+import { Directive, ElementRef, HostListener, input, output, inject } from '@angular/core';
 
 /**
  * Directive pour gérer les nœuds temporaires dans le flow
@@ -9,19 +9,21 @@ import { Directive, ElementRef, HostListener, Input, Output, EventEmitter } from
 })
 export class TemporaryNodeDirective {
   /** ID du nœud temporaire */
-  @Input() nodeId!: string;
-  /** Event émis quand un drop a lieu sur le nœud temporaire */
-  @Output() dropOnNode = new EventEmitter<string>();
+  nodeId = input.required<string>();
   
-  constructor(private el: ElementRef) {}
+  /** Event émis quand un drop a lieu sur le nœud temporaire */
+  dropOnNode = output<string>();
+  
+  private readonly el = inject(ElementRef);
   
   /**
    * Gestionnaire d'événement pour le pointerdown sur le nœud
    * @param event L'événement pointerdown
    */
   @HostListener('pointerdown', ['$event'])
-  onPointerDown(event: PointerEvent) {
+  onPointerDown(event: PointerEvent): void {
     // Empêcher la propagation pour éviter que le canvas ne gère l'événement
+    event.preventDefault();
     event.stopPropagation();
   }
   
@@ -30,13 +32,13 @@ export class TemporaryNodeDirective {
    * @param event L'événement pointerup
    */
   @HostListener('pointerup', ['$event'])
-  onPointerUp(event: PointerEvent) {
+  onPointerUp(event: PointerEvent): void {
     // Empêcher la propagation pour éviter que le canvas ne gère l'événement
     event.preventDefault();
     event.stopPropagation();
     
     // Émettre l'événement pour notifier qu'un drop a eu lieu sur ce nœud
-    this.dropOnNode.emit(this.nodeId);
+    this.dropOnNode.emit(this.nodeId());
   }
   
   /**
@@ -44,12 +46,25 @@ export class TemporaryNodeDirective {
    * @param event L'événement click
    */
   @HostListener('click', ['$event'])
-  onClick(event: MouseEvent) {
+  onClick(event: MouseEvent): void {
     // Empêcher la propagation pour éviter que le canvas ne gère l'événement
     event.preventDefault();
     event.stopPropagation();
     
     // Émettre l'événement pour notifier qu'un drop a eu lieu sur ce nœud
-    this.dropOnNode.emit(this.nodeId);
+    this.dropOnNode.emit(this.nodeId());
+  }
+  
+  /**
+   * Empêche l'événement de création de nœud lorsqu'un drop est détecté sur un nœud temporaire
+   * @param event L'événement drop
+   */
+  @HostListener('drop', ['$event'])
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    // Émettre l'événement pour notifier qu'un drop a eu lieu sur ce nœud
+    this.dropOnNode.emit(this.nodeId());
   }
 } 

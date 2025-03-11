@@ -19,6 +19,7 @@ import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
 import { Connection, CrmNode } from '../../models/crm.models';
 import { ZoomService } from '../../services/zoom.service';
 import { TemporaryNodeService } from '../../services/temporary-node.service';
+import { FlowStateService } from '../../services/flow-state.service';
 
 /**
  * Composant qui encapsule le flow diagram
@@ -50,6 +51,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   readonly flowService = inject(FlowService);
   readonly zoomService = inject(ZoomService);
   readonly temporaryNodeService = inject(TemporaryNodeService);
+  readonly flowStateService = inject(FlowStateService);
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
   private readonly destroyRef = inject(DestroyRef);
   
@@ -63,22 +65,24 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    * Initialisation des souscriptions et des données
    */
   ngOnInit(): void {
-    console.log('FlowContainer ngOnInit - Starting initialization');
+    // Nettoyer toute trace d'états temporaires précédents
+    this.flowStateService.clearTemporaryElements();
     
     // Vérifier que les nœuds ont été créés
-    console.log('Nodes after initialization:', this.flowService.nodes);
+    console.log('Nodes after initialization:', this.flowStateService.nodes());
     
     // S'abonner aux changements de draggingItemType
     this.temporaryNodeService.draggingItemType$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(itemType => {
-        console.log('FlowContainer detected draggingItemType change:', itemType);
+        console.log('Drag item type changed to:', itemType);
+        
         if (itemType) {
           // Quand le type change (début de drag), créer les nœuds temporaires
-          this.flowService.createTemporaryNodes(itemType);
+          this.temporaryNodeService.createTemporaryNodes(itemType);
           setTimeout(() => {
             this.changeDetectorRef.detectChanges();
-            console.log('Created temporary nodes after drag start:', this.flowService.temporaryNodes.length);
+            console.log('Created temporary nodes after drag start:', this.flowStateService.temporaryNodes().length);
           }, 50);
         }
       });
@@ -146,41 +150,32 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    * @param event L'événement de création de nœud
    */
   onCreateNode(event: any): void {
-    console.log('Create node event received:', event);
-    
-    // Blocage strict si nous sommes en cours de drag ou de création
-    if (this.flowService.draggingItemType || this.flowService.isCreatingNode) {
-      console.log('STRICT BLOCKING: Node creation blocked during drag or creation');
-      
-      // Empêcher la création du nœud et tout traitement ultérieur
-      if (event.preventDefault) event.preventDefault();
-      if (event.stopPropagation) event.stopPropagation();
-      
-      // Supprimer immédiatement tout élément qui pourrait avoir été créé
-      this.blockAndCleanUnauthorizedDrop();
-      
-      return; // Sortir de la fonction sans créer de nœud
-    }
-    
-    // Procéder avec la création de nœud normale
-    if (!event) {
-      console.error('Invalid event object:', event);
-      return;
-    }
-    
     try {
-      const nodeType = event.data as string || 'Default';
+      console.log('Create node event received:', event);
       
-      console.log('Node type:', nodeType);
-      console.log('Node position:', event.rect);
+      // Vérifier si nous sommes actuellement en cours de drag ou si des nœuds temporaires sont affichés
+      // Dans ce cas, ne pas traiter l'événement fCreateNode pour éviter les duplications
+      if (this.flowStateService.draggingItemType() || this.flowStateService.temporaryNodes().length > 0) {
+        console.log('Ignoring fCreateNode event during drag or when temporary nodes exist');
+        return;
+      }
+
+      // Extraire les propriétés de l'événement
+      const { nodeType } = event;
+
+      // Générer un identifiant unique pour le nouveau nœud
+      const nodeId = `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       
-      // Créer et ajouter un nouveau nœud via le service
-      this.flowService.addNode({
-        id: crypto.randomUUID(),
+      // Créer le nœud
+      const newNode: CrmNode = {
+        id: nodeId,
         type: nodeType,
-        text: `${nodeType} ${this.flowService.nodes.length + 1}`,
+        text: `${nodeType} ${this.flowStateService.nodes().length + 1}`,
         position: event.rect
-      });
+      };
+
+      // Ajouter le nœud et sauvegarder l'état
+      this.flowService.addNodeAndSave(newNode);
       
       // Force la mise à jour de la vue
       this.changeDetectorRef.markForCheck();
@@ -199,265 +194,6 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   }
   
   /**
-   * Gestionnaire pour le pointerup sur le canvas (hors nœuds)
-   * @param event L'événement pointerup
-   */
-  onCanvasPointerUp(event: PointerEvent): void {
-    if (this.temporaryNodeService.draggingItemType && !this.temporaryNodeService.isCreatingNode) {
-      console.log('Canvas pointerup event detected during drag');
-      
-      // Bloquer l'événement pour empêcher toute propagation
-      event.preventDefault();
-      event.stopPropagation();
-      
-      // Vérifier si l'élément sous le pointeur est un nœud temporaire
-      const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
-      
-      // Chercher un nœud temporaire
-      const temporaryNodeElement = elementsAtPoint.find(el => 
-        el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
-      );
-      
-      if (temporaryNodeElement) {
-        // Trouver l'ID du nœud temporaire
-        const temporaryNode = temporaryNodeElement.classList.contains('temporary-node') 
-          ? temporaryNodeElement 
-          : temporaryNodeElement.closest('.temporary-node');
-        
-        if (temporaryNode) {
-          // Extraire l'ID du nœud temporaire
-          const nodeId = temporaryNode.getAttribute('data-node-id');
-          if (nodeId) {
-            console.log('Drop detected over temporary node:', nodeId);
-            
-            // Créer immédiatement le nœud
-            this.onDropOnTemporaryNode(nodeId);
-            return;
-          }
-        }
-      }
-      
-      console.log('Canvas pointer up occurred outside a temporary node, cleaning up');
-      
-      // Empêcher la création de nœud en dehors des zones recommandées
-      // Supprimer immédiatement tout élément créé par erreur
-      this.blockAndCleanUnauthorizedDrop();
-    }
-  }
-  
-  /**
-   * Bloque le drop non autorisé et nettoie les éléments créés par erreur
-   */
-  private blockAndCleanUnauthorizedDrop(): void {
-    // Empêcher toute opération sur le flux pendant le nettoyage
-    this.temporaryNodeService.isCreatingNode = false;
-    
-    // Utiliser setTimeout pour s'assurer que ce code s'exécute après les événements de la bibliothèque
-    setTimeout(() => {
-      // Nettoyer les classes visuelles
-      document.body.classList.remove('no-drop-allowed');
-      
-      // Supprimer les placeholders externes
-      const placeholders = document.querySelectorAll('.f-external-item-placeholder');
-      placeholders.forEach(el => {
-        try {
-          el.remove();
-        } catch (e) {
-          console.log('Error removing placeholder:', e);
-        }
-      });
-      
-      // Supprimer les éléments de prévisualisation du drag
-      const previews = document.querySelectorAll('.f-external-item-preview');
-      previews.forEach(el => {
-        try {
-          el.remove();
-        } catch (e) {
-          console.log('Error removing preview:', e);
-        }
-      });
-      
-      // Supprimer tout nœud visible qui n'est pas enregistré
-      const visibleNodes = document.querySelectorAll('[data-fnode]');
-      visibleNodes.forEach(nodeEl => {
-        // Vérifier que ce n'est pas un nœud déjà dans notre liste
-        const nodeId = nodeEl.getAttribute('data-fnode');
-        // Si ce nœud n'est pas dans notre liste et n'est pas un nœud temporaire, le supprimer
-        if (nodeId && !this.flowService.nodes().some((n: CrmNode) => n.id === nodeId) && 
-            !nodeEl.classList.contains('temporary-node')) {
-          try {
-            nodeEl.remove();
-          } catch (e) {
-            console.log('Error removing node:', e);
-          }
-        }
-      });
-      
-      // Nettoyer les nœuds temporaires pour éviter les problèmes d'état
-      this.flowService.clearTemporaryElements();
-      
-      // Forcer la détection de changements pour mettre à jour l'UI
-      this.changeDetectorRef.detectChanges();
-      
-      // Terminer le drag sans créer de nœud
-      this.resetDragState();
-    }, 0);
-  }
-  
-  /**
-   * Gestionnaire d'événement global pour les mouseup
-   * @param event L'événement mouseup
-   */
-  @HostListener('window:mouseup', ['$event'])
-  handleFlowEvent(event: MouseEvent): void {
-    if (this.temporaryNodeService.draggingItemType && !this.temporaryNodeService.isCreatingNode) {
-      console.log('Global mouse up event during drag');
-      
-      // Bloquer les événements au niveau document
-      event.stopPropagation();
-      
-      // Obtenir tous les éléments à la position du clic
-      const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
-      
-      // Vérifier si un nœud temporaire se trouve à cet endroit
-      const temporaryNodeElement = elementsAtPoint.find(el => 
-        el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
-      );
-      
-      if (temporaryNodeElement) {
-        // Trouver l'ID du nœud temporaire
-        const temporaryNode = temporaryNodeElement.classList.contains('temporary-node') 
-          ? temporaryNodeElement 
-          : temporaryNodeElement.closest('.temporary-node');
-        
-        if (temporaryNode) {
-          // Extraire l'ID du nœud temporaire de l'attribut data-node-id
-          const nodeId = temporaryNode.getAttribute('data-node-id');
-          if (nodeId) {
-            console.log('Drop detected over temporary node:', nodeId);
-            this.onDropOnTemporaryNode(nodeId);
-            return;
-          }
-        }
-      }
-      
-      // Si nous ne sommes pas sur un nœud temporaire, annuler le drag et supprimer tout node placé
-      console.log('Mouse up occurred outside a temporary node, cleaning up');
-      
-      // Bloquer et nettoyer tout drop non autorisé
-      this.blockAndCleanUnauthorizedDrop();
-    }
-  }
-  
-  /**
-   * Gestionnaire d'événement global pour les événements fCreateNode
-   * @param event L'événement fCreateNode
-   */
-  @HostListener('window:fCreateNode', ['$event'])
-  onGlobalCreateNode(event: CustomEvent): void {
-    if (this.temporaryNodeService.draggingItemType && !this.temporaryNodeService.isCreatingNode) {
-      console.log('Intercepted global fCreateNode event during drag, preventing default');
-      
-      // Empêcher la création du nœud
-      event.preventDefault();
-      event.stopPropagation();
-      
-      // Bloquer et nettoyer tout drop non autorisé
-      this.blockAndCleanUnauthorizedDrop();
-    }
-  }
-  
-  /**
-   * Gestionnaire pour les événements dragover
-   * @param event L'événement dragover
-   */
-  onDragOver(event: DragEvent): void {
-    // Ne rien faire si aucun élément n'est en cours de drag
-    if (!this.flowService.draggingItemType) {
-      return;
-    }
-
-    // Vérifier si le drag est au-dessus d'un nœud temporaire
-    const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
-    const isOverTemporaryNode = elementsAtPoint.some(el => 
-      el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
-    );
-
-    // Autoriser le drop uniquement sur les nœuds temporaires
-    if (isOverTemporaryNode) {
-      event.preventDefault(); // Permet le drop
-    } else {
-      // Ne pas appeler preventDefault() pour ne pas autoriser le drop
-      // Mais ajouter une classe visuelle pour indiquer la zone interdite
-      document.body.classList.add('no-drop-allowed');
-    }
-  }
-  
-  /**
-   * Gestionnaire pour les événements drop
-   * @param event L'événement drop
-   */
-  onDrop(event: DragEvent): void {
-    // Nettoyer la classe visuelle d'interdiction
-    document.body.classList.remove('no-drop-allowed');
-
-    // Vérifier si le drop est sur un nœud temporaire
-    const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
-    const isOverTemporaryNode = elementsAtPoint.some(el => 
-      el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
-    );
-
-    if (this.flowService.draggingItemType && !isOverTemporaryNode) {
-      // Si le drop est en dehors d'un nœud temporaire, bloquer et nettoyer
-      event.preventDefault();
-      event.stopPropagation();
-      console.log('Drop canceled - not on a temporary node');
-      this.blockAndCleanUnauthorizedDrop();
-      return;
-    }
-
-    // Continuer le traitement normal du drop si c'est sur un nœud temporaire
-    if (this.flowService.draggingItemType && isOverTemporaryNode) {
-      event.preventDefault();
-      
-      // Ne pas ajouter de logique supplémentaire ici car le drop sera géré 
-      // par le gestionnaire spécifique du nœud temporaire (onDropOnTemporaryNode)
-    }
-  }
-  
-  /**
-   * Gestionnaire pour démarrer le drag d'un élément
-   * @param itemType Le type d'élément en cours de drag
-   */
-  onDragStart(itemType: string): void {
-    console.log('Flow container direct drag start with item type:', itemType);
-    // Mise à jour du type d'élément en cours de drag dans le service
-    // Note: La création des nœuds temporaires est maintenant gérée par la souscription à draggingItemType$
-    this.temporaryNodeService.draggingItemType = itemType;
-  }
-  
-  /**
-   * Gestionnaire pour terminer le drag
-   */
-  onDragEnd(): void {
-    this.resetDragState();
-  }
-  
-  /**
-   * Réinitialise l'état de drag
-   * @private
-   */
-  private resetDragState(): void {
-    // Réinitialiser les états
-    this.flowService.draggingItemType = null;
-    this.flowService.isCreatingNode = false;
-    this.flowService.clearTemporaryElements();
-    
-    // Forcer la détection de changements
-    this.changeDetectorRef.detectChanges();
-  }
-  
-  /**
    * Gestionnaire d'événement global pour les dragend
    * @param event L'événement dragend
    */
@@ -466,7 +202,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     // Nettoyer la classe visuelle d'interdiction dans tous les cas
     document.body.classList.remove('no-drop-allowed');
     
-    if (this.temporaryNodeService.draggingItemType) {
+    if (this.flowStateService.draggingItemType()) {
       console.log('Global dragend event captured');
       
       // Vérifier si le drop est sur un nœud temporaire
@@ -483,31 +219,183 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   }
   
   /**
-   * Gère la création d'une connexion entre deux nœuds
-   * @param event L'événement de création de connexion
+   * Gestionnaire d'événement global pour les touches (pour capturer Escape)
+   * @param event L'événement clavier
+   */
+  @HostListener('window:keydown', ['$event'])
+  onKeyDown(event: KeyboardEvent): void {
+    // Si la touche Escape est pressée pendant un drag, nettoyer les nœuds temporaires
+    if (event.key === 'Escape' && this.flowStateService.draggingItemType()) {
+      console.log('Escape key pressed during drag, cleaning up');
+      this.blockAndCleanUnauthorizedDrop();
+    }
+  }
+  
+  /**
+   * Gestionnaire d'événement global pour les mouseup (pour capturer les fins de drag potentielles)
+   * @param event L'événement mouseup
+   */
+  @HostListener('window:mouseup', ['$event'])
+  onGlobalMouseUp(event: MouseEvent): void {
+    // Si un drag est en cours, vérifier si le mouseup n'est pas sur un nœud temporaire
+    if (this.flowStateService.draggingItemType()) {
+      const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
+      const isOverTemporaryNode = elementsAtPoint.some(el => 
+        el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
+      );
+      
+      if (!isOverTemporaryNode) {
+        console.log('Mouse up detected outside a temporary node during drag, cleaning up');
+        this.blockAndCleanUnauthorizedDrop();
+      }
+    }
+  }
+  
+  /**
+   * Améliore la méthode blockAndCleanUnauthorizedDrop pour garantir le nettoyage complet
+   * @private
+   */
+  private blockAndCleanUnauthorizedDrop(): void {
+    // Nettoyer les indicateurs de classe visuels
+    document.body.classList.remove('no-drop-allowed');
+    
+    // Vérifier s'il y a des nœuds "fantômes" créés par accident
+    const nodeElements = document.querySelectorAll('[data-fnode]');
+    nodeElements.forEach(nodeEl => {
+      const nodeId = nodeEl.getAttribute('data-fnode');
+      // Si ce nœud n'est pas dans notre liste et n'est pas un nœud temporaire, le supprimer
+      if (nodeId && !this.flowStateService.nodes().some((n: CrmNode) => n.id === nodeId) && 
+          !nodeEl.classList.contains('temporary-node')) {
+        try {
+          nodeEl.remove();
+        } catch (e) {
+          console.error('Error removing ghost node:', e);
+        }
+      }
+    });
+    
+    // Nettoyer les nœuds temporaires pour éviter les problèmes d'état
+    this.flowStateService.clearTemporaryElements();
+    this.flowStateService.updateDraggingItemType(null);
+    
+    // Réinitialiser l'état de création
+    this.flowStateService.updateIsCreatingNode(false);
+    
+    // Forcer la détection de changements pour mettre à jour l'UI
+    this.changeDetectorRef.detectChanges();
+    console.log('Drag state reset completed, temporary nodes cleared');
+  }
+  
+  /**
+   * Gestionnaire pour le survol pendant le drag
+   * @param event L'événement dragover
+   */
+  onDragOver(event: DragEvent): void {
+    // Ne rien faire si aucun élément n'est en cours de drag
+    if (!this.flowStateService.draggingItemType()) {
+      return;
+    }
+    
+    // Permet le drop en annulant le comportement par défaut
+    event.preventDefault();
+    
+    // Vérifier si nous sommes en train de survoler un nœud temporaire
+    const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
+    const isOverTemporaryNode = elementsAtPoint.some(el => 
+      el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
+    );
+    
+    // Mise à jour du style du curseur et des classes visuelles
+    if (isOverTemporaryNode) {
+      document.body.classList.remove('no-drop-allowed');
+      event.dataTransfer!.dropEffect = 'copy';
+    } else {
+      document.body.classList.add('no-drop-allowed');
+      event.dataTransfer!.dropEffect = 'none';
+    }
+  }
+  
+  /**
+   * Gestionnaire pour le drop sur le canvas
+   * @param event L'événement drop
+   */
+  onDrop(event: DragEvent): void {
+    // Vérifier si nous sommes sur un nœud temporaire
+    const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
+    const isOverTemporaryNode = elementsAtPoint.some(el => 
+      el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
+    );
+
+    if (this.flowStateService.draggingItemType() && !isOverTemporaryNode) {
+      // Si le drop est en dehors d'un nœud temporaire, bloquer et nettoyer
+      event.preventDefault();
+      event.stopPropagation();
+      
+      this.blockAndCleanUnauthorizedDrop();
+      return;
+    }
+    
+    // Continuer le traitement normal du drop si c'est sur un nœud temporaire
+    if (this.flowStateService.draggingItemType() && isOverTemporaryNode) {
+      event.preventDefault();
+      
+      // Ne pas ajouter de logique supplémentaire ici car le drop sera géré 
+      // par l'événement dropOnNode émis par la directive appTemporaryNode
+    }
+  }
+  
+  /**
+   * Gestionnaire pour commencer le drag
+   * @param itemType Le type d'élément en cours de drag
+   */
+  onDragStart(itemType: string): void {
+    console.log('Flow container direct drag start with item type:', itemType);
+    // Utilisation de la nouvelle méthode startDragging
+    this.flowService.startDragging(itemType);
+  }
+  
+  /**
+   * Gestionnaire pour terminer le drag
+   */
+  onDragEnd(): void {
+    this.resetDragState();
+  }
+  
+  /**
+   * Réinitialise l'état de drag
+   * @private
+   */
+  private resetDragState(): void {
+    // Utilisation de la nouvelle méthode endDragging
+    this.flowService.endDragging();
+    // Réinitialiser l'état de création
+    this.flowStateService.updateIsCreatingNode(false);
+    
+    // Forcer la détection de changements
+    this.changeDetectorRef.detectChanges();
+  }
+  
+  /**
+   * Gestionnaire pour la création de connexion entre nœuds
    */
   onCreateConnection(event: any): void {
     console.log('Connection creation event:', event);
     
-    // Vérifier que les IDs de source et de cible sont définis
-    if (!event || !event.outputId || !event.inputId) {
-      console.warn('Tentative de création de connexion avec des points non valides');
-      if (event && event.prevent) {
-        event.prevent();
-      }
+    // Vérifier si les deux extrémités de la connexion sont valides
+    if (!event.outputId || !event.inputId) {
+      console.error('Invalid connection endpoints:', event);
       return;
     }
     
-    // Utiliser la méthode centralisée pour vérifier si la connexion est autorisée
+    // Vérifier si la connexion est autorisée selon nos règles métier
     if (!this.flowService.canConnect(event.outputId, event.inputId)) {
-      console.warn('Connexion non autorisée selon les règles métier');
-      event.prevent();
+      console.warn('Connection not allowed between', event.outputId, 'and', event.inputId);
       
-      // Récupérer les nœuds concernés pour des messages plus détaillés
+      // Afficher un message d'erreur avec les noms des types de nœuds
       const sourceId = event.outputId.replace('output_', '');
       const targetId = event.inputId.replace('input_', '');
-      const sourceNode = this.flowService.nodes().find((node: CrmNode) => node.id === sourceId);
-      const targetNode = this.flowService.nodes().find((node: CrmNode) => node.id === targetId);
+      const sourceNode = this.flowStateService.nodes().find((node: CrmNode) => node.id === sourceId);
+      const targetNode = this.flowStateService.nodes().find((node: CrmNode) => node.id === targetId);
       
       if (sourceNode && targetNode) {
         this.showConnectionLimitMessage(
@@ -526,7 +414,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     };
     
     // Ajouter la connexion
-    this.flowService.addConnection(newConnection);
+    this.flowService.addConnectionAndSave(newConnection);
   }
   
   /**
@@ -551,73 +439,32 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   }
 
   /**
-   * Détermine si une connexion depuis un BinarySplit est une branche supérieure ou inférieure
+   * Détermine si une connexion est la branche supérieure ou inférieure d'un BinarySplit
    * @param connection La connexion à vérifier
-   * @returns 'top' pour la branche supérieure, 'bottom' pour la branche inférieure, ou undefined
+   * @returns 'top' si c'est la branche supérieure, 'bottom' si c'est la branche inférieure, undefined sinon
    */
   getBinarySplitBranchType(connection: Connection): 'top' | 'bottom' | undefined {
     // Vérifier d'abord si la connexion provient d'un BinarySplit
     const sourceId = connection.sourceId.replace('output_', '');
-    const sourceNode = this.flowService.nodes().find((node: CrmNode) => node.id === sourceId);
+    const sourceNode = this.flowStateService.nodes().find((node: CrmNode) => node.id === sourceId);
     if (!sourceNode || sourceNode.type !== 'BinarySplit') {
       return undefined;
     }
     
     // Trouver toutes les connexions sortantes du même BinarySplit
-    const binarySplitConnections = this.flowService.connections().filter(
+    const binarySplitConnections = this.flowStateService.connections().filter(
       (conn: Connection) => conn.sourceId === connection.sourceId
     );
     
-    // Si moins de 2 connexions, nous ne pouvons pas déterminer
-    if (binarySplitConnections.length < 2) {
-      // Pour 1 connexion, retourner 'top' par défaut
+    // S'il n'y a qu'une seule connexion, c'est par défaut 'top'
+    if (binarySplitConnections.length === 1) {
       return 'top';
     }
     
-    // Trouver les nœuds cibles pour chaque connexion
+    // S'il y a plusieurs connexions, déterminer laquelle est 'top' en fonction de la position verticale
     const targetNodes = binarySplitConnections.map((conn: Connection) => {
       const targetId = conn.targetId.replace('input_', '');
-      return this.flowService.nodes().find((node: CrmNode) => node.id === targetId);
-    }).filter(Boolean) as CrmNode[];
-    
-    // Trier les nœuds cibles par position Y
-    targetNodes.sort((a, b) => a.position.y - b.position.y);
-    
-    // Déterminer le nœud cible actuel
-    const currentTargetId = connection.targetId.replace('input_', '');
-    const currentTarget = this.flowService.nodes().find((node: CrmNode) => node.id === currentTargetId);
-    
-    // Si le nœud cible actuel est le premier dans la liste triée (le plus haut), c'est 'top'
-    if (currentTarget && targetNodes[0] && currentTarget.id === targetNodes[0].id) {
-      return 'top';
-    }
-    
-    // Sinon, c'est 'bottom'
-    return 'bottom';
-  }
-
-  /**
-   * Détermine le numéro de branche d'une connexion MultiSplit (de 1 à 5)
-   * @param connection La connexion à vérifier
-   * @returns Le numéro de branche (1 à 5) ou undefined si ce n'est pas une connexion MultiSplit
-   */
-  getMultiSplitBranchNumber(connection: Connection): number | undefined {
-    // Vérifier d'abord si la connexion provient d'un MultiSplit
-    const sourceId = connection.sourceId.replace('output_', '');
-    const sourceNode = this.flowService.nodes().find((node: CrmNode) => node.id === sourceId);
-    if (!sourceNode || sourceNode.type !== 'MultiSplit') {
-      return undefined;
-    }
-    
-    // Trouver toutes les connexions sortantes du même MultiSplit
-    const multiSplitConnections = this.flowService.connections().filter(
-      (conn: Connection) => conn.sourceId === connection.sourceId
-    );
-    
-    // Trouver les nœuds cibles pour chaque connexion
-    const targetNodes = multiSplitConnections.map((conn: Connection) => {
-      const targetId = conn.targetId.replace('input_', '');
-      return this.flowService.nodes().find((node: CrmNode) => node.id === targetId);
+      return this.flowStateService.nodes().find((node: CrmNode) => node.id === targetId);
     }).filter(Boolean) as CrmNode[];
     
     // Trier les nœuds cibles par position Y (verticalement du haut vers le bas)
@@ -625,15 +472,56 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     
     // Déterminer le nœud cible actuel
     const currentTargetId = connection.targetId.replace('input_', '');
-    const currentTarget = this.flowService.nodes().find((node: CrmNode) => node.id === currentTargetId);
+    const currentTarget = this.flowStateService.nodes().find((node: CrmNode) => node.id === currentTargetId);
+    
+    // Si le nœud cible actuel est le premier dans la liste triée (le plus haut), c'est 'top'
+    if (currentTarget && targetNodes[0] && currentTarget.id === targetNodes[0].id) {
+      return 'top';
+    }
+    
+    // Sinon c'est 'bottom'
+    return 'bottom';
+  }
+  
+  /**
+   * Détermine le numéro de branche d'un MultiSplit
+   * @param connection La connexion à vérifier
+   * @returns Le numéro de la branche (1-5), undefined si ce n'est pas un MultiSplit
+   */
+  getMultiSplitBranchNumber(connection: Connection): number | undefined {
+    // Vérifier d'abord si la connexion provient d'un MultiSplit
+    const sourceId = connection.sourceId.replace('output_', '');
+    const sourceNode = this.flowStateService.nodes().find((node: CrmNode) => node.id === sourceId);
+    if (!sourceNode || sourceNode.type !== 'MultiSplit') {
+      return undefined;
+    }
+    
+    // Trouver toutes les connexions sortantes du même MultiSplit
+    const multiSplitConnections = this.flowStateService.connections().filter(
+      (conn: Connection) => conn.sourceId === connection.sourceId
+    );
+    
+    // S'il n'y a qu'une seule connexion, c'est la branche 1
+    if (multiSplitConnections.length === 1) {
+      return 1;
+    }
+    
+    const targetNodes = multiSplitConnections.map((conn: Connection) => {
+      const targetId = conn.targetId.replace('input_', '');
+      return this.flowStateService.nodes().find((node: CrmNode) => node.id === targetId);
+    }).filter(Boolean) as CrmNode[];
+    
+    // Trier les nœuds cibles par position Y (verticalement du haut vers le bas)
+    targetNodes.sort((a, b) => a.position.y - b.position.y);
+    
+    // Déterminer le nœud cible actuel
+    const currentTargetId = connection.targetId.replace('input_', '');
+    const currentTarget = this.flowStateService.nodes().find((node: CrmNode) => node.id === currentTargetId);
     
     if (!currentTarget) return undefined;
     
-    // Trouver l'index du nœud cible actuel dans la liste triée
+    // Trouver l'index du nœud cible dans la liste triée et retourner ce numéro + 1
     const index = targetNodes.findIndex(node => node.id === currentTarget.id);
-    
-    // Retourner l'index + 1 (pour que ça commence à 1 au lieu de 0)
-    // Limiter à 5 branches maximum
-    return Math.min(index + 1, 5);
+    return index >= 0 ? index + 1 : undefined;
   }
 } 

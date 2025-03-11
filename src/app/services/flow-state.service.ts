@@ -17,6 +17,8 @@ export interface FlowState {
     draggingItemType: string | null;
     isCreatingNode: boolean;
   };
+  selectedNodeId: string | null;
+  selectedConnectionId: string | null;
 }
 
 /**
@@ -43,7 +45,9 @@ export class FlowStateService {
       connections: [],
       draggingItemType: null,
       isCreatingNode: false
-    }
+    },
+    selectedNodeId: null,
+    selectedConnectionId: null
   });
 
   /**
@@ -92,6 +96,16 @@ export class FlowStateService {
   readonly isCreatingNode = computed(() => this._state().temporaryElements.isCreatingNode);
 
   /**
+   * ID du nœud sélectionné en lecture seule
+   */
+  readonly selectedNodeId = computed(() => this._state().selectedNodeId);
+
+  /**
+   * ID de la connexion sélectionnée en lecture seule
+   */
+  readonly selectedConnectionId = computed(() => this._state().selectedConnectionId);
+
+  /**
    * Met à jour l'état complet du flow
    * @param state Nouvel état du flow
    */
@@ -100,7 +114,9 @@ export class FlowStateService {
       nodes: structuredClone(state.nodes),
       connections: structuredClone(state.connections),
       zoom: structuredClone(state.zoom),
-      temporaryElements: structuredClone(state.temporaryElements)
+      temporaryElements: structuredClone(state.temporaryElements),
+      selectedNodeId: state.selectedNodeId,
+      selectedConnectionId: state.selectedConnectionId
     });
   }
 
@@ -116,6 +132,17 @@ export class FlowStateService {
   }
 
   /**
+   * Ajoute un nœud au flow
+   * @param node Le nœud à ajouter
+   */
+  addNode(node: CrmNode): void {
+    this._state.update(state => ({
+      ...state,
+      nodes: [...state.nodes, structuredClone(node)]
+    }));
+  }
+
+  /**
    * Met à jour uniquement les connections
    * @param connections Nouvelles connections
    */
@@ -123,6 +150,17 @@ export class FlowStateService {
     this._state.update(state => ({
       ...state,
       connections: structuredClone(connections)
+    }));
+  }
+
+  /**
+   * Ajoute une connexion au flow
+   * @param connection La connexion à ajouter
+   */
+  addConnection(connection: Connection): void {
+    this._state.update(state => ({
+      ...state,
+      connections: [...state.connections, structuredClone(connection)]
     }));
   }
 
@@ -198,6 +236,28 @@ export class FlowStateService {
   }
 
   /**
+   * Met à jour l'ID du nœud sélectionné
+   * @param id Nouvel ID
+   */
+  updateSelectedNodeId(id: string | null): void {
+    this._state.update(state => ({
+      ...state,
+      selectedNodeId: id
+    }));
+  }
+
+  /**
+   * Met à jour l'ID de la connexion sélectionnée
+   * @param id Nouvel ID
+   */
+  updateSelectedConnectionId(id: string | null): void {
+    this._state.update(state => ({
+      ...state,
+      selectedConnectionId: id
+    }));
+  }
+
+  /**
    * Nettoie tous les éléments temporaires
    */
   clearTemporaryElements(): void {
@@ -209,5 +269,111 @@ export class FlowStateService {
         connections: []
       }
     }));
+  }
+
+  /**
+   * Vérifie si une position est libre (pas de nœuds à proximité)
+   * @param position Position à vérifier
+   * @returns true si la position est libre
+   */
+  isPositionFree(position: {x: number, y: number}): boolean {
+    // Considérer une marge de 50px autour des nœuds existants
+    const margin = 50;
+    return !this.nodes().some(node => 
+      Math.abs(node.position.x - position.x) < margin && 
+      Math.abs(node.position.y - position.y) < margin
+    );
+  }
+
+  /**
+   * Obtient le nombre maximum d'entrées par défaut pour un type de nœud
+   * @param type Type de nœud
+   * @returns Nombre maximum d'entrées
+   */
+  getDefaultMaxInputs(type: string): number {
+    switch (type) {
+      // Targeting
+      case 'Audience':
+        return 0;  // Une audience n'a pas d'entrée
+
+      // Execution
+      case 'BinarySplit':
+        return 1;  // Un séparateur binaire a exactement 1 entrée
+      case 'MultiSplit':
+        return 1;  // Un séparateur multiple a exactement 1 entrée
+      
+      // Communication
+      case 'Full Screen':
+        return 1;  // Une notification full screen a 1 entrée
+      case 'SMS':
+        return 1;  // Un SMS a 1 entrée
+      case 'Push':
+        return 1;  // Une notification push a 1 entrée
+      case 'Email':
+        return 1;  // Un email a 1 entrée
+      
+      // Rewards
+      case 'Freebet':
+        return 1;  // Un freebet a 1 entrée
+      
+      // Fallback
+      default:
+        return 1;  // Par défaut, 1 entrée
+    }
+  }
+
+  /**
+   * Obtient le nombre maximum de sorties par défaut pour un type de nœud
+   * @param type Type de nœud
+   * @returns Nombre maximum de sorties
+   */
+  getDefaultMaxOutputs(type: string): number {
+    switch (type) {
+      // Targeting
+      case 'Audience':
+        return 1;  // Une audience a 1 sortie maximum
+      
+      // Execution
+      case 'BinarySplit':
+        return 2;  // Un séparateur binaire a exactement 2 sorties
+      case 'MultiSplit':
+        return 5;  // Un séparateur multiple a jusqu'à 5 sorties
+      
+      // Communication
+      case 'Full Screen':
+        return 1;  // Une notification full screen a 1 sortie
+      case 'SMS':
+        return 1;  // Un SMS a 1 sortie
+      case 'Push':
+        return 1;  // Une notification push a 1 sortie
+      case 'Email':
+        return 1;  // Un email a 1 sortie
+      
+      // Rewards
+      case 'Freebet':
+        return 1;  // Un freebet a 1 sortie
+      
+      // Fallback
+      default:
+        return 1;  // Par défaut, 1 sortie
+    }
+  }
+
+  /**
+   * Obtient les connexions sortantes d'un nœud
+   * @param nodeId Identifiant du nœud (avec préfixe output_)
+   * @returns Connexions sortantes
+   */
+  getConnectionsFrom(nodeId: string): Connection[] {
+    return this.connections().filter(conn => conn.sourceId === nodeId);
+  }
+
+  /**
+   * Obtient les connexions entrantes d'un nœud
+   * @param nodeId Identifiant du nœud (avec préfixe input_)
+   * @returns Connexions entrantes
+   */
+  getConnectionsTo(nodeId: string): Connection[] {
+    return this.connections().filter(conn => conn.targetId === nodeId);
   }
 } 

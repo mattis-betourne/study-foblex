@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { BuilderComponent } from './components/builder/builder.component';
 import { FlowContainerComponent } from './components/flow-container/flow-container.component';
 import { FlowService } from './services/flow.service';
+import { FlowStateService } from './services/flow-state.service';
 
 /**
  * Composant principal de l'application
@@ -22,6 +23,7 @@ import { FlowService } from './services/flow.service';
 export class AppComponent {
   title = 'study-foblex';
   flowService = inject(FlowService);
+  flowStateService = inject(FlowStateService);
   
   /** État de la sidebar (ouvert par défaut) */
   isSidebarOpen = true;
@@ -40,14 +42,15 @@ export class AppComponent {
    */
   onItemDragStart(itemType: string): void {
     console.log('App component received itemDragStart event with type:', itemType);
-    // Délègue au service, qui déclenchera une réaction dans le flow-container
-    this.flowService.draggingItemType = itemType;
+    // Utilise la nouvelle méthode startDragging du FlowService
+    this.flowService.startDragging(itemType);
   }
   
   /**
    * Terminer le drag sans créer de nœud
    */
   onItemDragEnd(): void {
-    // Le composant flow-container s'occupera de nettoyer via le service
+    // Utilise la nouvelle méthode endDragging du FlowService
+    this.flowService.endDragging();
   }
 }

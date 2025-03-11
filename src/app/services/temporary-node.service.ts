@@ -39,49 +39,14 @@ export class TemporaryNodeService {
   readonly isCreatingNode$ = toObservable(this.flowStateService.isCreatingNode);
 
   /**
-   * Fonction de vérification si une position est libre
-   * @private
-   */
-  private _isPositionFreeFn: (position: {x: number, y: number}) => boolean = 
-    () => true;
-
-  /**
-   * Fonction pour obtenir le nombre maximum d'entrées par défaut
-   * @private
-   */
-  private _getDefaultMaxInputsFn: (type: string) => number = 
-    () => 1;
-
-  /**
-   * Fonction pour obtenir le nombre maximum de sorties par défaut
-   * @private
-   */
-  private _getDefaultMaxOutputsFn: (type: string) => number = 
-    () => 1;
-
-  /**
-   * Fonction pour obtenir les nœuds existants
-   * @private
-   */
-  private _getNodesFn: () => CrmNode[] = 
-    () => [];
-
-  /**
-   * Fonction pour obtenir les connexions
-   * @private
-   */
-  private _getConnectionsFn: () => Connection[] = 
-    () => [];
-
-  /**
    * Factory pour les stratégies de création de nœuds temporaires
    * @private
    */
   private strategyFactory: TemporaryNodeStrategyFactory;
 
   constructor() {
-    // Initialiser la factory avec une fonction qui sera mise à jour plus tard
-    this.strategyFactory = new TemporaryNodeStrategyFactory(this._getNodesFn);
+    // Initialiser la factory en lui passant directement la méthode du FlowStateService
+    this.strategyFactory = new TemporaryNodeStrategyFactory(() => this.flowStateService.nodes());
   }
 
   /**
@@ -127,34 +92,6 @@ export class TemporaryNodeService {
   }
 
   /**
-   * Configure les fonctions de support pour la création de nœuds temporaires
-   * @param isPositionFree Fonction pour vérifier si une position est libre
-   * @param getDefaultMaxInputs Fonction pour obtenir le max d'entrées par défaut
-   * @param getDefaultMaxOutputs Fonction pour obtenir le max de sorties par défaut
-   * @param getNodes Fonction pour obtenir les nœuds existants
-   * @param getConnections Fonction pour obtenir les connexions existantes
-   */
-  setSupport(
-    isPositionFree: (position: {x: number, y: number}) => boolean,
-    getDefaultMaxInputs: (type: string) => number,
-    getDefaultMaxOutputs: (type: string) => number,
-    getNodes: () => CrmNode[],
-    getConnections?: () => Connection[]
-  ): void {
-    this._isPositionFreeFn = isPositionFree;
-    this._getDefaultMaxInputsFn = getDefaultMaxInputs;
-    this._getDefaultMaxOutputsFn = getDefaultMaxOutputs;
-    this._getNodesFn = getNodes;
-    
-    if (getConnections) {
-      this._getConnectionsFn = getConnections;
-    }
-    
-    // Mettre à jour la factory avec la nouvelle fonction
-    this.strategyFactory = new TemporaryNodeStrategyFactory(this._getNodesFn);
-  }
-
-  /**
    * Nettoie les éléments temporaires
    */
   clearTemporaryElements(): void {
@@ -173,7 +110,7 @@ export class TemporaryNodeService {
     this.clearTemporaryElements();
     
     // Pour chaque nœud existant, créer un nœud temporaire qui pourrait s'y connecter
-    const nodes = this._getNodesFn();
+    const nodes = this.flowStateService.nodes();
     if (nodes.length === 0) {
       console.log('No existing nodes to create temporary connections to, creating central node');
       
@@ -183,22 +120,19 @@ export class TemporaryNodeService {
     }
     
     // Obtenir les restrictions pour le type de nœud en cours de drag
-    const maxInputsForType = this._getDefaultMaxInputsFn(itemType);
-    const maxOutputsForType = this._getDefaultMaxOutputsFn(itemType);
+    const maxInputsForType = this.flowStateService.getDefaultMaxInputs(itemType);
+    const maxOutputsForType = this.flowStateService.getDefaultMaxOutputs(itemType);
     
     console.log(`Creating temp nodes for type ${itemType} with max inputs: ${maxInputsForType}, max outputs: ${maxOutputsForType}`);
     
     const allTempNodes: CrmNode[] = [];
     const allTempConnections: Connection[] = [];
     
-    // Obtenir toutes les connexions
-    const allConnections = this._getConnectionsFn();
-    
     // Pour chaque nœud existant
     nodes.forEach(node => {
       // Obtenir les connexions existantes pour ce nœud
-      const existingOutputConnections = this.getConnectionsFrom(`output_${node.id}`);
-      const existingInputConnections = this.getConnectionsTo(`input_${node.id}`);
+      const existingOutputConnections = this.flowStateService.getConnectionsFrom(`output_${node.id}`);
+      const existingInputConnections = this.flowStateService.getConnectionsTo(`input_${node.id}`);
       
       console.log(`Node ${node.id} (${node.type}) has:
         - ${existingOutputConnections.length} output connections
@@ -239,9 +173,10 @@ export class TemporaryNodeService {
           existingOutputConnections,
           existingInputConnections,
           itemType,
-          this._isPositionFreeFn,
-          this._getDefaultMaxInputsFn,
-          this._getDefaultMaxOutputsFn
+          // Utiliser directement les méthodes du FlowStateService au lieu des fonctions injectées
+          (position) => this.flowStateService.isPositionFree(position),
+          (type) => this.flowStateService.getDefaultMaxInputs(type),
+          (type) => this.flowStateService.getDefaultMaxOutputs(type)
         );
         
         console.log(`Strategy created ${result.nodes.length} temporary nodes and ${result.connections.length} connections`);
@@ -273,8 +208,8 @@ export class TemporaryNodeService {
       type: itemType,
       text: `${itemType} (Drop here)`,
       position: { x: 400, y: 300 },
-      maxInputs: this._getDefaultMaxInputsFn(itemType),
-      maxOutputs: this._getDefaultMaxOutputsFn(itemType)
+      maxInputs: this.flowStateService.getDefaultMaxInputs(itemType),
+      maxOutputs: this.flowStateService.getDefaultMaxOutputs(itemType)
     };
     
     console.log('Created central temporary node:', centralTempNode);
@@ -282,26 +217,6 @@ export class TemporaryNodeService {
     // Mettre à jour les signaux
     this.flowStateService.updateTemporaryNodes([centralTempNode]);
     this.flowStateService.updateTemporaryConnections([]);
-  }
-
-  /**
-   * Obtient les connexions sortantes d'un nœud
-   * @param nodeId Identifiant du nœud
-   * @returns Connexions sortantes
-   * @private
-   */
-  private getConnectionsFrom(nodeId: string): Connection[] {
-    return this._getConnectionsFn().filter(conn => conn.sourceId === nodeId);
-  }
-
-  /**
-   * Obtient les connexions entrantes d'un nœud
-   * @param nodeId Identifiant du nœud
-   * @returns Connexions entrantes
-   * @private
-   */
-  private getConnectionsTo(nodeId: string): Connection[] {
-    return this._getConnectionsFn().filter(conn => conn.targetId === nodeId);
   }
 
   /**
