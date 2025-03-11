@@ -210,31 +210,21 @@ export class FlowService {
     console.log('Creating default nodes...');
     
     try {
-      // Crée un nœud Client par défaut avec une position définie
-      const clientNode: CrmNode = {
+      // Crée un nœud Audience par défaut avec une position définie
+      const audienceNode: CrmNode = {
         id: generateGuid(),
-        type: 'Client',
-        text: 'Client 1',
+        type: 'Audience',
+        text: 'Audience cible',
         position: { x: 100, y: 100 },
-        maxInputs: 0,
-        maxOutputs: 1 
+        maxInputs: 0,  // Pas d'entrée
+        maxOutputs: 1  // 1 sortie maximum
       };
       
-      // Crée un nœud Task par défaut avec une position définie
-      const taskNode: CrmNode = {
-        id: generateGuid(),
-        type: 'Task',
-        text: 'Task 1',
-        position: { x: 350, y: 100 },
-        maxInputs: 1,
-        maxOutputs: 1
-      };
-      
-      // Ajoute les nœuds en une seule opération pour éviter les mises à jour partielles
-      const newNodes = [clientNode, taskNode];
+      // Ajoute le nœud
+      const newNodes = [audienceNode];
       
       // Log pour déboguer
-      console.log('Nodes to be added:', JSON.stringify(newNodes));
+      console.log('Node to be added:', JSON.stringify(newNodes));
       
       // Mise à jour des nœuds
       this._nodes.set(newNodes);
@@ -242,17 +232,7 @@ export class FlowService {
       // Vérification après mise à jour
       console.log('Nodes after update:', JSON.stringify(this._nodes()));
       
-      // Crée une connexion entre les nœuds
-      const connection: Connection = {
-        id: generateGuid(),
-        sourceId: `output_${clientNode.id}`,
-        targetId: `input_${taskNode.id}`
-      };
-      
-      // Ajoute la connexion
-      this._connections.set([connection]);
-      
-      console.log('Default nodes created successfully:', newNodes);
+      console.log('Default node created successfully:', newNodes);
       
       // Sauvegarder l'état APRÈS création des nœuds par défaut
       // et s'assurer que c'est le premier état dans l'historique
@@ -492,20 +472,31 @@ export class FlowService {
    */
   getNodeIcon(type: string): string {
     switch (type) {
-      case 'Client':
-        return '👤';
-      case 'Contact':
-        return '📞';
-      case 'Task':
-        return '📋';
-      case 'Email':
-        return '📧';
-      case 'Meeting':
-        return '🗓️';
+      // Targeting
+      case 'Audience':
+        return '👥';
+        
+      // Execution
       case 'BinarySplit':
         return '🔀';
       case 'MultiSplit':
         return '🔱';
+      
+      // Communication
+      case 'Full Screen':
+        return '📱';
+      case 'SMS':
+        return '💬';
+      case 'Push':
+        return '🔔';
+      case 'Email':
+        return '✉️';
+      
+      // Rewards
+      case 'Freebet':
+        return '🎁';
+        
+      // Fallback
       default:
         return '📄';
     }
@@ -513,6 +504,7 @@ export class FlowService {
 
   /**
    * Retourne la classe CSS pour un type de nœud
+   * Note: Cette méthode est conservée pour compatibilité avec d'anciennes parties du code
    * @param type Type du nœud
    * @returns Classe CSS à appliquer
    */
@@ -521,27 +513,39 @@ export class FlowService {
     const baseClasses = 'min-w-[180px] rounded-md shadow-md overflow-hidden';
     
     switch (type) {
-      case 'Client':
-        bgClass = 'bg-blue-500';
+      // Targeting
+      case 'Audience':
+        bgClass = 'bg-yellow-500';
         break;
-      case 'Contact':
-        bgClass = 'bg-green-500';
-        break;
-      case 'Task':
-        bgClass = 'bg-orange-500';
-        break;
-      case 'Email':
-        bgClass = 'bg-purple-500';
-        break;
-      case 'Meeting':
-        bgClass = 'bg-red-500';
-        break;
+        
+      // Execution
       case 'BinarySplit':
         bgClass = 'bg-indigo-600';
         break;
       case 'MultiSplit':
         bgClass = 'bg-teal-600';
         break;
+      
+      // Communication
+      case 'Full Screen':
+        bgClass = 'bg-blue-500';
+        break;
+      case 'SMS':
+        bgClass = 'bg-green-500';
+        break;
+      case 'Push':
+        bgClass = 'bg-purple-500';
+        break;
+      case 'Email':
+        bgClass = 'bg-orange-500';
+        break;
+      
+      // Rewards
+      case 'Freebet':
+        bgClass = 'bg-red-500';
+        break;
+        
+      // Fallback
       default:
         bgClass = 'bg-gray-500';
     }
@@ -591,24 +595,31 @@ export class FlowService {
    */
   private getDefaultMaxInputs(type: string): number {
     switch (type) {
-      case 'Client':
-        return 1;  // Un client peut avoir une seule entrée
-      case 'Contact':
-        return 1;  // Un contact peut avoir une seule entrée
-      case 'Task':
-        return 5;  // Une tâche peut avoir jusqu'à 5 entrées
-      case 'Email':
-        return 2;  // Un email peut avoir jusqu'à 2 entrées
-      case 'Meeting':
-        return 3;  // Une réunion peut avoir jusqu'à 3 entrées
-      case 'Call':
-        return 2;  // Un appel peut avoir jusqu'à 2 entrées
-      case 'Note':
-        return 1;  // Une note peut avoir une seule entrée
+      // Targeting
+      case 'Audience':
+        return 0;  // Une audience n'a pas d'entrée
+      
+      // Execution
       case 'BinarySplit':
         return 1;  // Un séparateur binaire a exactement 1 entrée
       case 'MultiSplit':
         return 1;  // Un séparateur multiple a exactement 1 entrée
+      
+      // Communication
+      case 'Full Screen':
+        return 1;  // Une notification full screen a 1 entrée
+      case 'SMS':
+        return 1;  // Un SMS a 1 entrée
+      case 'Push':
+        return 1;  // Une notification push a 1 entrée
+      case 'Email':
+        return 1;  // Un email a 1 entrée
+      
+      // Rewards
+      case 'Freebet':
+        return 1;  // Un freebet a 1 entrée
+      
+      // Fallback
       default:
         return 1;  // Par défaut, 1 entrée
     }
@@ -621,24 +632,31 @@ export class FlowService {
    */
   private getDefaultMaxOutputs(type: string): number {
     switch (type) {
-      case 'Client':
-        return 3;  // Un client peut avoir jusqu'à 3 sorties
-      case 'Contact':
-        return 2;  // Un contact peut avoir jusqu'à 2 sorties
-      case 'Task':
-        return 2;  // Une tâche peut avoir jusqu'à 2 sorties
-      case 'Email':
-        return 1;  // Un email peut avoir 1 sortie
-      case 'Meeting':
-        return 2;  // Une réunion peut avoir jusqu'à 2 sorties
-      case 'Call':
-        return 1;  // Un appel peut avoir 1 sortie
-      case 'Note':
-        return 0;  // Une note ne peut pas avoir de sortie
+      // Targeting
+      case 'Audience':
+        return 1;  // Une audience a 1 sortie maximum
+      
+      // Execution
       case 'BinarySplit':
         return 2;  // Un séparateur binaire a exactement 2 sorties
       case 'MultiSplit':
         return 5;  // Un séparateur multiple peut avoir jusqu'à 5 sorties
+      
+      // Communication
+      case 'Full Screen':
+        return 1;  // Une notification full screen a 1 sortie
+      case 'SMS':
+        return 1;  // Un SMS a 1 sortie
+      case 'Push':
+        return 1;  // Une notification push a 1 sortie
+      case 'Email':
+        return 1;  // Un email a 1 sortie
+      
+      // Rewards
+      case 'Freebet':
+        return 1;  // Un freebet a 1 sortie
+      
+      // Fallback
       default:
         return 1;  // Par défaut, 1 sortie
     }

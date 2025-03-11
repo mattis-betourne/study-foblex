@@ -47,7 +47,7 @@
              [fInputId]="'input_' + node.id"
              [fInputMultiple]="node.maxInputs !== 1"
              fInputConnectableSide="right"
-             class="w-[200px] rounded-md overflow-hidden bg-white border-2 border-gray-200 border-dashed cursor-pointer temporary-node"
+             class="w-[200px] rounded-md overflow-hidden bg-white border-2 border-gray-200 border-dashed cursor-pointer temporary-node hover:border-green-400 transition-all"
              [attr.data-node-id]="node.id"
              appTemporaryNode
              [nodeId]="node.id"
@@ -58,6 +58,12 @@
             </div>
             <span class="font-medium text-gray-400">{{ node.type }}</span>
           </div>
+          <!-- <div class="min-h-[48px] p-3 border-t border-gray-200 flex items-center justify-center text-gray-400 text-sm">
+            <div class="flex items-center">
+              <span class="inline-block w-2 h-2 bg-green-400 rounded-full mr-1 animate-pulse"></span>
+              <span>Drop here to connect</span>
+            </div>
+          </div> -->
         </div>
       }
       

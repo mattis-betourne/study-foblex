@@ -58,34 +58,28 @@ export class BuilderComponent implements OnInit {
   /** Catégories d'items disponibles dans le Builder */
   categories: BuilderCategory[] = [
     {
-      name: 'Contacts',
-      expanded: true,
-      items: [
-        { type: 'Client', icon: '👤', color: 'bg-blue-500' },
-        { type: 'Contact', icon: '📞', color: 'bg-green-500' }
-      ]
-    },
-    {
-      name: 'Ventes',
-      expanded: false,
-      items: [
-        { type: 'Deal', icon: '💰', color: 'bg-yellow-500' }
-      ]
-    },
-    {
-      name: 'Tâches',
-      expanded: false,
-      items: [
-        { type: 'Task', icon: '✅', color: 'bg-red-500' },
-        { type: 'Email', icon: '✉️', color: 'bg-purple-500' }
-      ]
-    },
-    {
-      name: 'Flux',
+      name: 'Execution',
       expanded: true,
       items: [
         { type: 'BinarySplit', icon: '🔀', color: 'bg-indigo-600' },
         { type: 'MultiSplit', icon: '🔱', color: 'bg-teal-600' }
+      ]
+    },
+    {
+      name: 'Communication',
+      expanded: true,
+      items: [
+        { type: 'Full Screen', icon: '📱', color: 'bg-blue-500' },
+        { type: 'SMS', icon: '💬', color: 'bg-green-500' },
+        { type: 'Push', icon: '🔔', color: 'bg-purple-500' },
+        { type: 'Email', icon: '✉️', color: 'bg-orange-500' }
+      ]
+    },
+    {
+      name: 'Rewards',
+      expanded: true,
+      items: [
+        { type: 'Freebet', icon: '🎁', color: 'bg-red-500' }
       ]
     }
   ];
