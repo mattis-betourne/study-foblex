@@ -1,7 +1,8 @@
-import { Component, ChangeDetectionStrategy, inject, signal, effect, DestroyRef } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SafeHtmlPipe } from '../../pipes/safe-html.pipe';
 import { FlowService } from '../../services/flow.service';
+import { HistoryService } from '../../services/history.service';
 
 /**
  * Interface pour les actions de la toolbar
@@ -24,84 +25,106 @@ interface ToolbarAction {
 }
 
 /**
- * Composant de toolbar flottant pour les actions sur le flow
- * Fournit des contrôles pour le zoom et d'autres actions
+ * Composant pour la barre d'outils flottante du flow diagram
  */
 @Component({
   selector: 'app-flow-toolbar',
   standalone: true,
   imports: [CommonModule, SafeHtmlPipe],
   templateUrl: './flow-toolbar.component.html',
-  styleUrls: ['./flow-toolbar.component.css'],
+  styleUrls: ['./flow-toolbar.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FlowToolbarComponent {
   /** Services injectés */
   private readonly flowService = inject(FlowService);
+  private readonly historyService = inject(HistoryService);
   private readonly destroyRef = inject(DestroyRef);
-  
+
   /** Actions disponibles dans la toolbar */
   protected readonly actions = signal<ToolbarAction[]>([]);
   
+  /** États dérivés des services pour les actions undo/redo */
+  protected readonly canUndo = this.historyService.canUndo;
+  protected readonly canRedo = this.historyService.canRedo;
+
   constructor() {
-    // Initialisation du composant
     this.initializeActions();
     this.setupKeyboardShortcuts();
-    
-    // Utilisation d'effect pour les réactions aux changements
-    effect(() => {
-      console.log('Actions updated:', this.actions());
-    });
   }
-  
+
   /**
    * Initialise les actions disponibles dans la toolbar
    */
   private initializeActions(): void {
-    this.actions.set([
+    const actionsList: ToolbarAction[] = [
       {
-        id: 'zoomOut',
-        label: 'Zoom Out',
-        icon: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
-              </svg>`,
-        action: () => this.zoomOut(),
-        tooltip: 'Réduire le zoom',
-        shortcut: 'Ctrl + -'
+        id: 'undo',
+        label: 'Annuler',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a6 6 0 010 12H11"/></svg>',
+        action: () => this.undo(),
+        tooltip: 'Annuler la dernière action',
+        shortcut: 'Ctrl+Z',
+        class: 'undo-action'
       },
       {
-        id: 'resetZoom',
-        label: 'Reset Zoom',
-        icon: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" />
-              </svg>`,
-        action: () => this.resetZoom(),
-        tooltip: 'Réinitialiser le zoom et centrer',
-        shortcut: 'Ctrl + 0'
+        id: 'redo',
+        label: 'Rétablir',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a6 6 0 100 12H13"/></svg>',
+        action: () => this.redo(),
+        tooltip: 'Rétablir la dernière action annulée',
+        shortcut: 'Ctrl+Y',
+        class: 'redo-action'
       },
       {
-        id: 'zoomIn',
-        label: 'Zoom In',
-        icon: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>`,
+        id: 'zoom-in',
+        label: 'Zoom avant',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>',
         action: () => this.zoomIn(),
-        tooltip: 'Augmenter le zoom',
-        shortcut: 'Ctrl + +'
+        tooltip: 'Zoom avant',
+        shortcut: 'Ctrl++',
+        class: 'zoom-action'
+      },
+      {
+        id: 'zoom-out',
+        label: 'Zoom arrière',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>',
+        action: () => this.zoomOut(),
+        tooltip: 'Zoom arrière',
+        shortcut: 'Ctrl+-',
+        class: 'zoom-action'
+      },
+      {
+        id: 'reset-zoom',
+        label: 'Réinitialiser le zoom',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>',
+        action: () => this.resetZoom(),
+        tooltip: 'Réinitialiser le zoom',
+        shortcut: 'Ctrl+0',
+        class: 'zoom-action'
       }
-    ]);
+    ];
+
+    this.actions.set(actionsList);
   }
-  
+
   /**
-   * Configure les raccourcis clavier pour les actions de zoom
+   * Configure les raccourcis clavier
    */
   private setupKeyboardShortcuts(): void {
     const keydownHandler = (event: KeyboardEvent) => {
-      // Vérifier si Ctrl (ou Cmd sur Mac) est enfoncé
-      const ctrlKey = event.ctrlKey || event.metaKey;
+      const { ctrlKey, key } = event;
       
       if (ctrlKey) {
-        switch (event.key) {
+        switch (key) {
+          case 'z':
+            event.preventDefault();
+            this.undo();
+            break;
+          case 'y':
+            event.preventDefault();
+            this.redo();
+            break;
           case '+':
           case '=': // Le signe égal est sur la même touche que le plus sur les claviers QWERTY
             event.preventDefault();
@@ -126,36 +149,69 @@ export class FlowToolbarComponent {
       document.removeEventListener('keydown', keydownHandler);
     });
   }
-  
+
   /**
    * Augmente le niveau de zoom
    */
   zoomIn(): void {
-    console.log('Zoom in requested');
     this.flowService.zoomIn();
   }
-  
+
   /**
    * Diminue le niveau de zoom
    */
   zoomOut(): void {
-    console.log('Zoom out requested');
     this.flowService.zoomOut();
   }
-  
+
   /**
    * Réinitialise le zoom et centre le canvas
    */
   resetZoom(): void {
-    console.log('Reset zoom requested');
     this.flowService.resetZoom();
   }
   
+  /**
+   * Annule la dernière action
+   */
+  undo(): void {
+    if (this.canUndo()) {
+      console.log('Executing undo action');
+      this.flowService.undo();
+    } else {
+      console.log('Undo action not available');
+    }
+  }
+  
+  /**
+   * Rétablit la dernière action annulée
+   */
+  redo(): void {
+    if (this.canRedo()) {
+      console.log('Executing redo action');
+      this.flowService.redo();
+    } else {
+      console.log('Redo action not available');
+    }
+  }
+
   /**
    * Exécute l'action associée à un bouton
    * @param action L'action à exécuter
    */
   executeAction(action: ToolbarAction): void {
+    // Vérifier si l'action est disponible avant de l'exécuter
+    if (action.id === 'undo' && !this.canUndo()) {
+      console.log('Cannot execute undo action: not available');
+      return;
+    }
+    
+    if (action.id === 'redo' && !this.canRedo()) {
+      console.log('Cannot execute redo action: not available');
+      return;
+    }
+    
+    // Exécuter l'action
     action.action();
   }
 } 

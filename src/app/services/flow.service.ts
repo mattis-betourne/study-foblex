@@ -1,7 +1,9 @@
-import { Injectable, ChangeDetectorRef } from '@angular/core';
+import { Injectable, ChangeDetectorRef, signal, effect, inject } from '@angular/core';
+import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { generateGuid } from '@foblex/utils';
 import { CrmNode, Connection } from '../models/crm.models';
 import { BehaviorSubject, Observable } from 'rxjs';
+import { HistoryService, FlowState } from './history.service';
 
 /**
  * Service responsable de la gestion du flow diagram (nœuds, connexions, etc.)
@@ -10,12 +12,13 @@ import { BehaviorSubject, Observable } from 'rxjs';
   providedIn: 'root'
 })
 export class FlowService {
-  private _nodes = new BehaviorSubject<CrmNode[]>([]);
-  private _connections = new BehaviorSubject<Connection[]>([]);
-  private _temporaryNodes = new BehaviorSubject<CrmNode[]>([]);
-  private _temporaryConnections = new BehaviorSubject<Connection[]>([]);
-  private _draggingItemType = new BehaviorSubject<string | null>(null);
-  private _isCreatingNode = new BehaviorSubject<boolean>(false);
+  // Signaux pour l'état principal
+  private readonly _nodes = signal<CrmNode[]>([]);
+  private readonly _connections = signal<Connection[]>([]);
+  private readonly _temporaryNodes = signal<CrmNode[]>([]);
+  private readonly _temporaryConnections = signal<Connection[]>([]);
+  private readonly _draggingItemType = signal<string | null>(null);
+  private readonly _isCreatingNode = signal<boolean>(false);
 
   /**
    * Référence au composant canvas pour les opérations de zoom
@@ -27,93 +30,107 @@ export class FlowService {
    */
   private _zoomDirective: any = null;
 
-  /** Observable des nœuds du diagramme */
-  readonly nodes$: Observable<CrmNode[]> = this._nodes.asObservable();
-  /** Observable des connexions du diagramme */
-  readonly connections$: Observable<Connection[]> = this._connections.asObservable();
-  /** Observable des nœuds temporaires */
-  readonly temporaryNodes$: Observable<CrmNode[]> = this._temporaryNodes.asObservable();
-  /** Observable des connexions temporaires */
-  readonly temporaryConnections$: Observable<Connection[]> = this._temporaryConnections.asObservable();
-  /** Observable du type d'élément en cours de drag */
-  readonly draggingItemType$: Observable<string | null> = this._draggingItemType.asObservable();
-  /** Observable indiquant si un nœud est en cours de création */
-  readonly isCreatingNode$: Observable<boolean> = this._isCreatingNode.asObservable();
+  // Pour la compatibilité avec le code existant qui utilise l'API Observable
+  readonly nodes$ = toObservable(this._nodes);
+  readonly connections$ = toObservable(this._connections);
+  readonly temporaryNodes$ = toObservable(this._temporaryNodes);
+  readonly temporaryConnections$ = toObservable(this._temporaryConnections);
+  readonly draggingItemType$ = toObservable(this._draggingItemType);
+  readonly isCreatingNode$ = toObservable(this._isCreatingNode);
 
-  constructor() {}
+  private readonly historyService = inject(HistoryService);
+
+  constructor() {
+    // Capturer l'état initial après l'initialisation des données,
+    // mais seulement si nous avons déjà des données
+    setTimeout(() => {
+      // Ne sauvegarder l'état initial que s'il y a effectivement des données
+      if (this._nodes().length > 0 || this._connections().length > 0) {
+        this.saveState();
+      }
+    }, 0);
+
+    // Création d'un effet pour déboguer les changements d'état (utile en développement)
+    // effect(() => {
+    //   console.log('[FlowService] État mis à jour:', {
+    //     nodes: this._nodes().length,
+    //     connections: this._connections().length,
+    //     tempNodes: this._temporaryNodes().length,
+    //     tempConnections: this._temporaryConnections().length
+    //   });
+    // });
+  }
 
   /**
    * @returns Les nœuds actuels du diagramme
    */
   get nodes(): CrmNode[] {
-    return this._nodes.value;
+    return this._nodes();
   }
 
   /**
    * @returns Les connexions actuelles du diagramme
    */
   get connections(): Connection[] {
-    return this._connections.value;
+    return this._connections();
   }
 
   /**
    * @returns Les nœuds temporaires actuels
    */
   get temporaryNodes(): CrmNode[] {
-    return this._temporaryNodes.value;
+    return this._temporaryNodes();
   }
 
   /**
    * @returns Les connexions temporaires actuelles
    */
   get temporaryConnections(): Connection[] {
-    return this._temporaryConnections.value;
+    return this._temporaryConnections();
   }
 
   /**
    * @returns Le type d'élément en cours de drag
    */
   get draggingItemType(): string | null {
-    return this._draggingItemType.value;
+    return this._draggingItemType();
+  }
+
+  /**
+   * @param value Le type d'élément en cours de drag
+   */
+  set draggingItemType(value: string | null) {
+    this._draggingItemType.set(value);
   }
 
   /**
    * @returns Si un nœud est en cours de création
    */
   get isCreatingNode(): boolean {
-    return this._isCreatingNode.value;
+    return this._isCreatingNode();
   }
 
   /**
-   * Définit le type d'élément en cours de drag
-   */
-  set draggingItemType(value: string | null) {
-    this._draggingItemType.next(value);
-  }
-
-  /**
-   * Définit si un nœud est en cours de création
+   * @param value Si un nœud est en cours de création
    */
   set isCreatingNode(value: boolean) {
-    this._isCreatingNode.next(value);
+    this._isCreatingNode.set(value);
   }
 
   /**
-   * Définit la référence au composant canvas
-   * @param canvas La référence au composant canvas
+   * Définit la référence au canvas
+   * @param canvas Référence au canvas
    */
   setCanvasRef(canvas: any): void {
     this._canvasRef = canvas;
-    console.log('Canvas reference set in service:', this._canvasRef);
   }
 
   /**
    * Définit la référence à la directive de zoom
-   * @param zoomDirective La référence à la directive de zoom
+   * @param zoomDirective Référence à la directive de zoom
    */
   setZoomDirective(zoomDirective: any): void {
     this._zoomDirective = zoomDirective;
-    console.log('Zoom directive reference set in service:', this._zoomDirective);
   }
 
   /**
@@ -121,48 +138,36 @@ export class FlowService {
    * @param point Point central du zoom (optionnel)
    */
   zoomIn(point?: any): void {
+    console.log('Zooming in...');
     if (this._zoomDirective) {
-      try {
-        console.log('Zooming in using directive');
-        this._zoomDirective.zoomIn(point);
-      } catch (error) {
-        console.error('Error during zoom in:', error);
-      }
+      this._zoomDirective.zoomIn(point);
     } else {
-      console.warn('Zoom directive reference is not available for zoom in');
+      console.warn('Zoom directive non disponible');
     }
   }
-  
+
   /**
    * Diminue le niveau de zoom
    * @param point Point central du zoom (optionnel)
    */
   zoomOut(point?: any): void {
+    console.log('Zooming out...');
     if (this._zoomDirective) {
-      try {
-        console.log('Zooming out using directive');
-        this._zoomDirective.zoomOut(point);
-      } catch (error) {
-        console.error('Error during zoom out:', error);
-      }
+      this._zoomDirective.zoomOut(point);
     } else {
-      console.warn('Zoom directive reference is not available for zoom out');
+      console.warn('Zoom directive non disponible');
     }
   }
-  
+
   /**
-   * Réinitialise le zoom
+   * Réinitialise le zoom et centre le canvas
    */
   resetZoom(): void {
+    console.log('Resetting zoom...');
     if (this._zoomDirective) {
-      try {
-        console.log('Resetting zoom using directive');
-        this._zoomDirective.reset();
-      } catch (error) {
-        console.error('Error during reset zoom:', error);
-      }
+      this._zoomDirective.reset();
     } else {
-      console.warn('Zoom directive reference is not available for reset zoom');
+      console.warn('Zoom directive non disponible');
     }
   }
 
@@ -171,8 +176,10 @@ export class FlowService {
    * @param node Le nœud à ajouter
    */
   addNode(node: CrmNode): void {
-    const currentNodes = this._nodes.value;
-    this._nodes.next([...currentNodes, node]);
+    this._nodes.update(nodes => [...nodes, node]);
+    
+    // Sauvegarder l'état après modification
+    this.saveState();
   }
 
   /**
@@ -180,8 +187,10 @@ export class FlowService {
    * @param connection La connexion à ajouter
    */
   addConnection(connection: Connection): void {
-    const currentConnections = this._connections.value;
-    this._connections.next([...currentConnections, connection]);
+    this._connections.update(connections => [...connections, connection]);
+    
+    // Sauvegarder l'état après modification
+    this.saveState();
   }
 
   /**
@@ -189,7 +198,7 @@ export class FlowService {
    */
   addDefaultNode(): void {
     // Vérifier si des nœuds existent déjà pour éviter la duplication
-    if (this._nodes.value.length > 0) {
+    if (this._nodes().length > 0) {
       console.log('Default nodes already exist, skipping creation');
       return;
     }
@@ -220,10 +229,10 @@ export class FlowService {
       console.log('Nodes to be added:', JSON.stringify(newNodes));
       
       // Mise à jour des nœuds
-      this._nodes.next(newNodes);
+      this._nodes.set(newNodes);
       
       // Vérification après mise à jour
-      console.log('Nodes after update:', JSON.stringify(this._nodes.value));
+      console.log('Nodes after update:', JSON.stringify(this._nodes()));
       
       // Crée une connexion entre les nœuds
       const connection: Connection = {
@@ -233,11 +242,53 @@ export class FlowService {
       };
       
       // Ajoute la connexion
-      this._connections.next([connection]);
+      this._connections.set([connection]);
       
       console.log('Default nodes created successfully:', newNodes);
+      
+      // Sauvegarder l'état APRÈS création des nœuds par défaut
+      // et s'assurer que c'est le premier état dans l'historique
+      if (this._nodes().length > 0) {
+        setTimeout(() => {
+          // Vider l'historique avant de sauvegarder l'état initial
+          this.historyService.clear();
+          // Puis sauvegarder l'état initial
+          this.saveState();
+        }, 0);
+      }
     } catch (error) {
       console.error('Error creating default nodes:', error);
+    }
+  }
+
+  /**
+   * Vérifie si une position est libre (pas de nœud existant à cette position)
+   */
+  private isPositionFree(position: {x: number, y: number}): boolean {
+    // Considérer une marge de 50px autour des nœuds existants
+    const margin = 50;
+    return !this._nodes().some(node => 
+      Math.abs(node.position.x - position.x) < margin && 
+      Math.abs(node.position.y - position.y) < margin
+    );
+  }
+
+  /**
+   * Nettoie les éléments temporaires
+   */
+  clearTemporaryElements(): void {
+    // Ne déclencher de sauvegarde que si nous avions des éléments temporaires
+    const hadTemporaryElements = 
+      this._temporaryNodes().length > 0 || 
+      this._temporaryConnections().length > 0;
+    
+    // Effacer les nœuds et connexions temporaires
+    this._temporaryNodes.set([]);
+    this._temporaryConnections.set([]);
+    
+    // Si nous avons supprimé des éléments temporaires, sauvegarder l'état
+    if (hadTemporaryElements) {
+      this.saveState();
     }
   }
 
@@ -252,7 +303,7 @@ export class FlowService {
     this.clearTemporaryElements();
     
     // Pour chaque nœud existant, créer un nœud temporaire qui pourrait s'y connecter
-    if (this.nodes.length === 0) {
+    if (this._nodes().length === 0) {
       console.log('No existing nodes to create temporary connections to');
       
       // Créer un nœud temporaire au centre si aucun nœud n'existe
@@ -263,14 +314,14 @@ export class FlowService {
         position: { x: 400, y: 300 }
       };
       
-      this._temporaryNodes.next([centralTempNode]);
+      this._temporaryNodes.set([centralTempNode]);
       return;
     }
     
     const tempNodes: CrmNode[] = [];
     const tempConnections: Connection[] = [];
     
-    for (const existingNode of this.nodes) {
+    for (const existingNode of this._nodes()) {
       console.log('Creating temporary nodes around existing node:', existingNode.id);
       
       // Créer un nœud temporaire à droite du nœud existant
@@ -323,31 +374,8 @@ export class FlowService {
     }
     
     console.log('Created temporary nodes:', tempNodes.length);
-    console.log('Created temporary connections:', tempConnections.length);
-    
-    this._temporaryNodes.next(tempNodes);
-    this._temporaryConnections.next(tempConnections);
-  }
-
-  /**
-   * Détermine si une position est libre (aucun nœud existant à proximité)
-   * @param position La position à vérifier
-   * @returns true si la position est libre, false sinon
-   */
-  private isPositionFree(position: {x: number, y: number}): boolean {
-    return !this.nodes.some(n => 
-      Math.abs(n.position.x - position.x) < 100 && 
-      Math.abs(n.position.y - position.y) < 100
-    );
-  }
-
-  /**
-   * Nettoie les nœuds et connexions temporaires
-   */
-  clearTemporaryElements(): void {
-    console.log('Clearing temporary elements');
-    this._temporaryNodes.next([]);
-    this._temporaryConnections.next([]);
+    this._temporaryNodes.set(tempNodes);
+    this._temporaryConnections.set(tempConnections);
   }
 
   /**
@@ -359,32 +387,32 @@ export class FlowService {
     console.log('Dropped on temporary node:', temporaryNodeId);
     
     // Marquer que nous commençons la création d'un nœud
-    this.isCreatingNode = true;
+    this._isCreatingNode.set(true);
     
-    if (!this.draggingItemType) {
+    if (!this._draggingItemType()) {
       this.clearTemporaryElements();
-      this.isCreatingNode = false;
+      this._isCreatingNode.set(false);
       return;
     }
     
     // Trouver le nœud temporaire concerné
-    const temporaryNode = this.temporaryNodes.find(node => node.id === temporaryNodeId);
+    const temporaryNode = this._temporaryNodes().find(node => node.id === temporaryNodeId);
     if (!temporaryNode) {
       this.clearTemporaryElements();
-      this.isCreatingNode = false;
+      this._isCreatingNode.set(false);
       return;
     }
     
     // Trouver les connexions temporaires associées à ce nœud
-    const relatedTemporaryConnections = this.temporaryConnections.filter(
+    const relatedTemporaryConnections = this._temporaryConnections().filter(
       conn => conn.sourceId === `output_${temporaryNodeId}` || conn.targetId === `input_${temporaryNodeId}`
     );
     
     // Créer un nœud permanent à la place du nœud temporaire
     const permanentNode: CrmNode = {
       id: generateGuid(),
-      type: this.draggingItemType!,
-      text: `${this.draggingItemType} ${this.nodes.length + 1}`,
+      type: this._draggingItemType()!,
+      text: `${this._draggingItemType()} ${this._nodes().length + 1}`,
       position: { ...temporaryNode.position }
     };
     
@@ -414,7 +442,7 @@ export class FlowService {
     this.clearTemporaryElements();
     
     // Réinitialiser l'état
-    this.draggingItemType = null;
+    this._draggingItemType.set(null);
     
     // Supprimer tout élément de placeholder qui aurait pu être créé par le système de drag-and-drop de Foblex
     setTimeout(() => {
@@ -425,73 +453,127 @@ export class FlowService {
       changeDetectorRef.detectChanges();
       
       // Réinitialiser le flag de création de nœud
-      this.isCreatingNode = false;
+      this._isCreatingNode.set(false);
     }, 50);
   }
 
   /**
-   * Termine le drag sans créer de nœud
-   * @param changeDetectorRef Le ChangeDetectorRef pour forcer la mise à jour de la vue
+   * Termine l'opération de drag
+   * @param changeDetectorRef Référence au détecteur de changements
    */
   endDrag(changeDetectorRef: ChangeDetectorRef): void {
-    console.log('Ending drag without creating node');
+    console.log('Ending drag operation');
     
-    // Nettoie les nœuds et connexions temporaires
+    // Nettoyer les éléments temporaires
     this.clearTemporaryElements();
     
-    // Réinitialise l'état du drag
-    this.draggingItemType = null;
+    // Réinitialiser l'état
+    this._draggingItemType.set(null);
+    this._isCreatingNode.set(false);
     
-    // Supprime tout élément qui aurait pu être créé
-    setTimeout(() => {
-      const placeholders = document.querySelectorAll('.f-external-item-placeholder');
-      placeholders.forEach(el => el.remove());
-      
-      // Réinitialise le flag de création de nœud
-      this.isCreatingNode = false;
-      
-      // Force la mise à jour de la vue
+    // Nettoyer les éléments visuels
+    const placeholders = document.querySelectorAll('.f-external-item-placeholder');
+    placeholders.forEach(el => el.remove());
+    
+    const previews = document.querySelectorAll('.f-external-item-preview');
+    previews.forEach(el => el.remove());
+    
+    document.body.style.cursor = '';
+    document.body.classList.remove('f-dragging');
+    document.body.classList.remove('no-drop-allowed');
+    
+    // Force la mise à jour de la vue
+    if (changeDetectorRef) {
       changeDetectorRef.detectChanges();
-      console.log('Drag end UI updated');
-    }, 50);
+    }
   }
 
   /**
-   * Renvoie l'icône correspondant au type de nœud
-   * @param type Le type de nœud
-   * @returns L'icône correspondante
+   * Retourne l'icône pour un type de nœud
+   * @param type Type du nœud
+   * @returns Icône à afficher
    */
   getNodeIcon(type: string): string {
-    const icons: { [key: string]: string } = {
-      'Client': '👤',
-      'Contact': '📞',
-      'Deal': '💰',
-      'Task': '✅',
-      'Email': '✉️',
-      'Default': '📄'
-    };
-    
-    return icons[type] || icons['Default'];
+    switch (type) {
+      case 'Client':
+        return '👤';
+      case 'Contact':
+        return '📞';
+      case 'Task':
+        return '📋';
+      case 'Email':
+        return '📧';
+      case 'Meeting':
+        return '🗓️';
+      default:
+        return '📄';
+    }
   }
 
   /**
-   * Renvoie les classes CSS en fonction du type de nœud
-   * @param type Le type de nœud
-   * @returns Les classes CSS correspondantes
+   * Retourne la classe CSS pour un type de nœud
+   * @param type Type du nœud
+   * @returns Classe CSS à appliquer
    */
   getNodeClass(type: string): string {
+    let bgClass = '';
     const baseClasses = 'min-w-[180px] rounded-md shadow-md overflow-hidden';
     
-    const typeClasses: { [key: string]: string } = {
-      'Client': 'bg-blue-500',
-      'Contact': 'bg-green-500',
-      'Deal': 'bg-yellow-500',
-      'Task': 'bg-red-500',
-      'Email': 'bg-purple-500',
-      'Default': 'bg-gray-500'
-    };
+    switch (type) {
+      case 'Client':
+        bgClass = 'bg-blue-500';
+        break;
+      case 'Contact':
+        bgClass = 'bg-green-500';
+        break;
+      case 'Task':
+        bgClass = 'bg-orange-500';
+        break;
+      case 'Email':
+        bgClass = 'bg-purple-500';
+        break;
+      case 'Meeting':
+        bgClass = 'bg-red-500';
+        break;
+      default:
+        bgClass = 'bg-gray-500';
+    }
     
-    const bgClass = typeClasses[type] || typeClasses['Default'];
     return `${baseClasses} ${bgClass}`;
+  }
+
+  /**
+   * Annule la dernière action
+   */
+  undo(): void {
+    console.log('Undo requested');
+    const previousState = this.historyService.undo();
+    if (previousState) {
+      this._nodes.set(previousState.nodes);
+      this._connections.set(previousState.connections);
+    }
+  }
+
+  /**
+   * Rétablit l'action annulée
+   */
+  redo(): void {
+    console.log('Redo requested');
+    const nextState = this.historyService.redo();
+    if (nextState) {
+      this._nodes.set(nextState.nodes);
+      this._connections.set(nextState.connections);
+    }
+  }
+
+  /**
+   * Sauvegarde l'état actuel dans l'historique
+   */
+  private saveState(): void {
+    const currentState: FlowState = {
+      nodes: this._nodes(),
+      connections: this._connections()
+    };
+    this.historyService.pushState(currentState);
   }
 } 
