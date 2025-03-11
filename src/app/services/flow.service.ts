@@ -504,6 +504,8 @@ export class FlowService {
         return '🗓️';
       case 'BinarySplit':
         return '🔀';
+      case 'MultiSplit':
+        return '🔱';
       default:
         return '📄';
     }
@@ -536,6 +538,9 @@ export class FlowService {
         break;
       case 'BinarySplit':
         bgClass = 'bg-indigo-600';
+        break;
+      case 'MultiSplit':
+        bgClass = 'bg-teal-600';
         break;
       default:
         bgClass = 'bg-gray-500';
@@ -602,6 +607,8 @@ export class FlowService {
         return 1;  // Une note peut avoir une seule entrée
       case 'BinarySplit':
         return 1;  // Un séparateur binaire a exactement 1 entrée
+      case 'MultiSplit':
+        return 1;  // Un séparateur multiple a exactement 1 entrée
       default:
         return 1;  // Par défaut, 1 entrée
     }
@@ -630,8 +637,77 @@ export class FlowService {
         return 0;  // Une note ne peut pas avoir de sortie
       case 'BinarySplit':
         return 2;  // Un séparateur binaire a exactement 2 sorties
+      case 'MultiSplit':
+        return 5;  // Un séparateur multiple peut avoir jusqu'à 5 sorties
       default:
         return 1;  // Par défaut, 1 sortie
     }
+  }
+
+  canConnect(source: string, target: string): boolean {
+    // Vérifier les règles métier pour les connexions
+    const sourceNodeId = source.replace('output_', '');
+    const targetNodeId = target.replace('input_', '');
+    
+    const sourceNode = this._nodes().find(node => node.id === sourceNodeId);
+    const targetNode = this._nodes().find(node => node.id === targetNodeId);
+
+    if (!sourceNode || !targetNode) {
+      return false;
+    }
+
+    // Vérifier si le nœud source est un output
+    const isSourceOutput = source.startsWith('output_');
+    // Vérifier si le nœud cible est un input
+    const isTargetInput = target.startsWith('input_');
+
+    // Vérifier que la connexion va d'un output vers un input
+    if (!isSourceOutput || !isTargetInput) {
+      return false;
+    }
+
+    const existingOutputs = this._connections().filter(conn => 
+      conn.sourceId === source
+    );
+    
+    const existingInputs = this._connections().filter(conn => 
+      conn.targetId === target
+    );
+
+    // Règles spécifiques pour BinarySplit
+    if (sourceNode.type === 'BinarySplit') {
+      // Un BinarySplit ne peut avoir que 2 connexions de sortie
+      if (existingOutputs.length >= 2) {
+        return false;
+      }
+    }
+    
+    // Règles spécifiques pour MultiSplit
+    if (sourceNode.type === 'MultiSplit') {
+      // Un MultiSplit ne peut avoir que 5 connexions de sortie maximum
+      if (existingOutputs.length >= 5) {
+        return false;
+      }
+    }
+
+    // Vérifier les limites générales d'entrées/sorties
+    if (targetNode.maxInputs !== undefined && existingInputs.length >= targetNode.maxInputs) {
+      return false;
+    }
+
+    if (sourceNode.maxOutputs !== undefined && existingOutputs.length >= sourceNode.maxOutputs) {
+      return false;
+    }
+
+    // Vérifier si une connexion existe déjà entre ces deux ports
+    const connectionExists = this._connections().some(
+      conn => conn.sourceId === source && conn.targetId === target
+    );
+
+    if (connectionExists) {
+      return false;
+    }
+
+    return true;
   }
 } 

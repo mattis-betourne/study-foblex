@@ -57,3 +57,15 @@ Angular CLI does not come with an end-to-end testing framework by default. You c
 ## Additional Resources
 
 For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+
+## Documentation technique
+
+### Pattern Strategy pour la gestion des nœuds temporaires
+
+Pour comprendre l'architecture et le fonctionnement du système de création des nœuds temporaires lors du drag & drop, consultez la [documentation détaillée du pattern Strategy](src/app/docs/temporary-nodes-strategy-pattern.md).
+
+Cette documentation explique :
+- L'architecture générale du pattern Strategy utilisé
+- Comment fonctionne le système de nœuds temporaires
+- Comment ajouter de nouveaux types de nœuds avec des règles spécifiques
+- Les bonnes pratiques pour maintenir et étendre le système

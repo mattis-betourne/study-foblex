@@ -464,81 +464,24 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   onCreateConnection(event: any): void {
     console.log('Connection creation event:', event);
     
-    // Extraire les IDs des nœuds à partir des IDs des points de connexion
-    const outputNodeId = event.outputId.replace('output_', '');
-    const inputNodeId = event.inputId.replace('input_', '');
-    
-    // Trouver les nœuds concernés
-    const sourceNode = this.flowService.nodes.find(node => node.id === outputNodeId);
-    const targetNode = this.flowService.nodes.find(node => node.id === inputNodeId);
-    
-    if (!sourceNode || !targetNode) {
-      console.warn('Source or target node not found');
+    // Utiliser la méthode centralisée pour vérifier si la connexion est autorisée
+    if (!this.flowService.canConnect(event.outputId, event.inputId)) {
+      console.warn('Connexion non autorisée selon les règles métier');
       event.prevent();
-      return;
-    }
-    
-    // Compter les connexions existantes pour ces nœuds
-    const existingOutputConnections = this.flowService.connections.filter(
-      conn => conn.sourceId === event.outputId
-    );
-    
-    const existingInputConnections = this.flowService.connections.filter(
-      conn => conn.targetId === event.inputId
-    );
-    
-    // Validation spéciale pour le BinarySplit
-    if (sourceNode.type === 'BinarySplit') {
-      // Vérifier si nous avons déjà atteint exactement 2 sorties
-      if (existingOutputConnections.length >= 2) {
-        console.warn(`BinarySplit ne peut avoir que 2 sorties exactement`);
-        
+      
+      // Vous pouvez toujours ajouter une logique pour afficher un message spécifique
+      // en récupérant les nœuds concernés pour des messages plus détaillés
+      const sourceId = event.outputId.replace('output_', '');
+      const targetId = event.inputId.replace('input_', '');
+      const sourceNode = this.flowService.nodes.find(node => node.id === sourceId);
+      const targetNode = this.flowService.nodes.find(node => node.id === targetId);
+      
+      if (sourceNode && targetNode) {
         this.showConnectionLimitMessage(
-          `Le nœud "BinarySplit" ne peut avoir que 2 sorties exactement`
+          `Connexion impossible entre "${sourceNode.type}" et "${targetNode.type}"`
         );
-        
-        event.prevent();
-        return;
       }
-    }
-    
-    // Validation spéciale pour la cible d'un BinarySplit
-    if (targetNode.type === 'BinarySplit' && existingInputConnections.length >= 1) {
-      console.warn(`BinarySplit ne peut avoir qu'une seule entrée`);
       
-      this.showConnectionLimitMessage(
-        `Le nœud "BinarySplit" ne peut avoir qu'une seule entrée`
-      );
-      
-      event.prevent();
-      return;
-    }
-    
-    // Validation générale pour les limites maxOutputs
-    if (sourceNode.maxOutputs !== undefined && 
-        existingOutputConnections.length >= sourceNode.maxOutputs) {
-      console.warn(`Max outputs (${sourceNode.maxOutputs}) reached for node ${outputNodeId}`);
-      
-      // Afficher un message à l'utilisateur
-      this.showConnectionLimitMessage(
-        `Le nœud "${sourceNode.type}" a atteint sa limite de ${sourceNode.maxOutputs} connexion(s) sortante(s)`
-      );
-      
-      event.prevent();
-      return;
-    }
-    
-    // Validation générale pour les limites maxInputs
-    if (targetNode.maxInputs !== undefined && 
-        existingInputConnections.length >= targetNode.maxInputs) {
-      console.warn(`Max inputs (${targetNode.maxInputs}) reached for node ${inputNodeId}`);
-      
-      // Afficher un message à l'utilisateur
-      this.showConnectionLimitMessage(
-        `Le nœud "${targetNode.type}" a atteint sa limite de ${targetNode.maxInputs} connexion(s) entrante(s)`
-      );
-      
-      event.prevent();
       return;
     }
     
@@ -618,5 +561,46 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     
     // Sinon, c'est 'bottom'
     return 'bottom';
+  }
+
+  /**
+   * Détermine le numéro de branche d'une connexion MultiSplit (de 1 à 5)
+   * @param connection La connexion à vérifier
+   * @returns Le numéro de branche (1 à 5) ou undefined si ce n'est pas une connexion MultiSplit
+   */
+  getMultiSplitBranchNumber(connection: Connection): number | undefined {
+    // Vérifier d'abord si la connexion provient d'un MultiSplit
+    const sourceId = connection.sourceId.replace('output_', '');
+    const sourceNode = this.flowService.nodes.find(node => node.id === sourceId);
+    if (!sourceNode || sourceNode.type !== 'MultiSplit') {
+      return undefined;
+    }
+    
+    // Trouver toutes les connexions sortantes du même MultiSplit
+    const multiSplitConnections = this.flowService.connections.filter(
+      conn => conn.sourceId === connection.sourceId
+    );
+    
+    // Trouver les nœuds cibles pour chaque connexion
+    const targetNodes = multiSplitConnections.map(conn => {
+      const targetId = conn.targetId.replace('input_', '');
+      return this.flowService.nodes.find(node => node.id === targetId);
+    }).filter(Boolean) as CrmNode[];
+    
+    // Trier les nœuds cibles par position Y (verticalement du haut vers le bas)
+    targetNodes.sort((a, b) => a.position.y - b.position.y);
+    
+    // Déterminer le nœud cible actuel
+    const currentTargetId = connection.targetId.replace('input_', '');
+    const currentTarget = this.flowService.nodes.find(node => node.id === currentTargetId);
+    
+    if (!currentTarget) return undefined;
+    
+    // Trouver l'index du nœud cible actuel dans la liste triée
+    const index = targetNodes.findIndex(node => node.id === currentTarget.id);
+    
+    // Retourner l'index + 1 (pour que ça commence à 1 au lieu de 0)
+    // Limiter à 5 branches maximum
+    return Math.min(index + 1, 5);
   }
 } 

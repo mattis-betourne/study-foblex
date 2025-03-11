@@ -11,8 +11,8 @@ export class StandardNodeStrategy implements TemporaryNodeStrategy {
     existingInputConnections: Connection[],
     itemType: string
   ): boolean {
-    // Cette stratégie s'applique à tous les nœuds standard (autres que BinarySplit)
-    return node.type !== 'BinarySplit';
+    // Cette stratégie s'applique à tous les nœuds standard (autres que spéciaux)
+    return node.type !== 'BinarySplit' && node.type !== 'MultiSplit';
   }
   
   createTemporaryNodes(
@@ -233,12 +233,152 @@ export class BinarySplitStrategy implements TemporaryNodeStrategy {
 }
 
 /**
+ * Stratégie pour la création de nœuds temporaires autour d'un MultiSplit
+ */
+export class MultiSplitStrategy implements TemporaryNodeStrategy {
+  constructor(private getAllNodes: () => CrmNode[]) {}
+
+  canApply(
+    node: CrmNode,
+    existingOutputConnections: Connection[],
+    existingInputConnections: Connection[],
+    itemType: string
+  ): boolean {
+    return node.type === 'MultiSplit';
+  }
+  
+  createTemporaryNodes(
+    node: CrmNode,
+    existingOutputConnections: Connection[],
+    existingInputConnections: Connection[],
+    itemType: string,
+    isPositionFree: (position: {x: number, y: number}) => boolean,
+    getDefaultMaxInputs: (type: string) => number,
+    getDefaultMaxOutputs: (type: string) => number
+  ): TemporaryNodesResult {
+    const result: TemporaryNodesResult = {
+      nodes: [],
+      connections: []
+    };
+    
+    // Pour un MultiSplit, autoriser l'ajout de connexions si moins de 5 sorties
+    const maxOutputs = 5;
+    const canAcceptMoreOutputs = existingOutputConnections.length < maxOutputs;
+    const canAcceptMoreInputs = existingInputConnections.length < 1;
+    
+    // Vérifier si le nœud du type dragué peut avoir des entrées
+    const newNodeCanHaveInputs = getDefaultMaxInputs(itemType) > 0;
+    
+    if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
+      // Calculer des positions pour les branches du MultiSplit
+      // Disposition en éventail : un nœud au milieu et les autres autour
+      const angleStep = Math.PI / (maxOutputs + 1);
+      const radius = 200; // Distance par rapport au nœud MultiSplit
+      
+      // Déterminer quelles positions sont déjà occupées
+      const usedAngles = new Set<number>();
+      
+      // Trouver les nœuds cibles des connexions existantes
+      for (const conn of existingOutputConnections) {
+        const targetNodeId = conn.targetId.replace('input_', '');
+        const targetNode = this.findConnectedNode(targetNodeId);
+        
+        if (targetNode) {
+          // Calculer l'angle approximatif par rapport au MultiSplit
+          const dx = targetNode.position.x - node.position.x;
+          const dy = targetNode.position.y - node.position.y;
+          const angle = Math.atan2(dy, dx);
+          
+          // Trouver l'index de l'angle le plus proche
+          const normalizedAngle = angle < 0 ? angle + 2 * Math.PI : angle;
+          const angleIndex = Math.round(normalizedAngle / angleStep) - 1;
+          
+          if (angleIndex >= 0 && angleIndex < maxOutputs) {
+            usedAngles.add(angleIndex);
+          }
+        }
+      }
+      
+      // Créer des nœuds temporaires pour les positions disponibles
+      for (let i = 0; i < maxOutputs; i++) {
+        if (!usedAngles.has(i)) {
+          // Calculer l'angle et la position
+          const angle = (i + 1) * angleStep;
+          const x = node.position.x + radius * Math.cos(angle);
+          const y = node.position.y + radius * Math.sin(angle);
+          
+          // Vérifier que la position est libre
+          if (isPositionFree({ x, y })) {
+            const multiSplitTempNode: CrmNode = {
+              id: `temp_multisplit_${i}_${generateGuid()}`,
+              type: itemType,
+              text: `${itemType} (Branche ${i + 1})`,
+              position: { x, y },
+              maxInputs: getDefaultMaxInputs(itemType),
+              maxOutputs: getDefaultMaxOutputs(itemType)
+            };
+            
+            result.nodes.push(multiSplitTempNode);
+            
+            // Créer une connexion temporaire
+            const multiSplitConnection: Connection = {
+              id: `temp_conn_${generateGuid()}`,
+              sourceId: `output_${node.id}`,
+              targetId: `input_${multiSplitTempNode.id}`
+            };
+            result.connections.push(multiSplitConnection);
+          }
+        }
+      }
+    }
+    
+    // Gérer l'entrée du MultiSplit si nécessaire
+    const newNodeCanHaveOutputs = getDefaultMaxOutputs(itemType) > 0;
+    
+    if (canAcceptMoreInputs && newNodeCanHaveOutputs) {
+      const inputTempNode: CrmNode = {
+        id: `temp_input_${generateGuid()}`,
+        type: itemType,
+        text: `${itemType} (Connexion à l'entrée)`,
+        position: { 
+          x: node.position.x - 250, 
+          y: node.position.y
+        },
+        maxInputs: getDefaultMaxInputs(itemType),
+        maxOutputs: getDefaultMaxOutputs(itemType)
+      };
+      
+      // Vérifier que la position est libre
+      if (isPositionFree(inputTempNode.position)) {
+        result.nodes.push(inputTempNode);
+        
+        // Créer une connexion temporaire
+        const inputConnection: Connection = {
+          id: `temp_conn_${generateGuid()}`,
+          sourceId: `output_${inputTempNode.id}`,
+          targetId: `input_${node.id}`
+        };
+        result.connections.push(inputConnection);
+      }
+    }
+    
+    return result;
+  }
+  
+  // Méthode pour trouver un nœud connecté en utilisant la fonction passée au constructeur
+  private findConnectedNode(nodeId: string): CrmNode | undefined {
+    return this.getAllNodes().find(node => node.id === nodeId);
+  }
+}
+
+/**
  * Factory qui retourne la stratégie appropriée selon le type de nœud
  */
 export class TemporaryNodeStrategyFactory {
   constructor(private getAllNodes: () => CrmNode[]) {
     this.strategies = [
       new BinarySplitStrategy(getAllNodes),
+      new MultiSplitStrategy(getAllNodes),
       new StandardNodeStrategy() // Stratégie par défaut, doit être en dernier
     ];
   }

@@ -84,7 +84,8 @@ export class BuilderComponent implements OnInit {
       name: 'Flux',
       expanded: true,
       items: [
-        { type: 'BinarySplit', icon: '🔀', color: 'bg-indigo-600' }
+        { type: 'BinarySplit', icon: '🔀', color: 'bg-indigo-600' },
+        { type: 'MultiSplit', icon: '🔱', color: 'bg-teal-600' }
       ]
     }
   ];
