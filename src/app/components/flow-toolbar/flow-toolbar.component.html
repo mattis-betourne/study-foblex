@@ -2,19 +2,20 @@
   class="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 flex justify-center animate-fade-in"
   role="toolbar" 
   aria-label="Flow controls">
-  <div class="bg-white rounded-lg shadow-md px-2 py-2 flex gap-1 border border-gray-200 backdrop-blur-md transition-shadow duration-200 hover:shadow-lg">
+  <div class="bg-white rounded-lg shadow-md px-2 py-2 flex gap-1 border border-gray-200 backdrop-blur-md transition-all duration-200 hover:shadow-lg">
     <div class="flex gap-1">
-      <button 
-        *ngFor="let action of actions" 
-        [id]="action.id"
-        class="w-10 h-10 flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-150 ease-in-out"
-        [ngClass]="action.class"
-        (click)="executeAction(action)"
-        [attr.aria-label]="action.label"
-        [attr.title]="action.tooltip + (action.shortcut ? ' (' + action.shortcut + ')' : '')">
-        <span class="flex items-center justify-center" [innerHTML]="action.icon | safeHtml"></span>
-        <span class="sr-only">{{ action.label }}</span>
-      </button>
+      @for (action of actions(); track action.id) {
+        <button 
+          [id]="action.id"
+          class="w-10 h-10 flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-150 ease-in-out"
+          [ngClass]="action.class"
+          (click)="executeAction(action)"
+          [attr.aria-label]="action.label"
+          [attr.title]="action.tooltip + (action.shortcut ? ' (' + action.shortcut + ')' : '')">
+          <span class="flex items-center justify-center" [innerHTML]="action.icon | safeHtml"></span>
+          <span class="sr-only">{{ action.label }}</span>
+        </button>
+      }
     </div>
   </div>
 </div> 

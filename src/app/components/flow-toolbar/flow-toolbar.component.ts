@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, AfterViewInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, effect, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SafeHtmlPipe } from '../../pipes/safe-html.pipe';
 import { FlowService } from '../../services/flow.service';
@@ -35,47 +35,30 @@ interface ToolbarAction {
   styleUrls: ['./flow-toolbar.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class FlowToolbarComponent implements OnInit, OnDestroy, AfterViewInit {
+export class FlowToolbarComponent {
+  /** Services injectés */
+  private readonly flowService = inject(FlowService);
+  private readonly destroyRef = inject(DestroyRef);
+  
   /** Actions disponibles dans la toolbar */
-  actions: ToolbarAction[] = [];
+  protected readonly actions = signal<ToolbarAction[]>([]);
   
-  /** Fonction de gestion des raccourcis clavier */
-  private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
-  
-  constructor(private flowService: FlowService) {}
-  
-  /**
-   * Initialisation du composant
-   */
-  ngOnInit(): void {
-    console.log('FlowToolbar initialized');
+  constructor() {
+    // Initialisation du composant
     this.initializeActions();
     this.setupKeyboardShortcuts();
-  }
-  
-  /**
-   * Méthode appelée après l'initialisation de la vue
-   */
-  ngAfterViewInit(): void {
-    console.log('FlowToolbar view initialized');
-  }
-  
-  /**
-   * Nettoyage lors de la destruction du composant
-   */
-  ngOnDestroy(): void {
-    // Supprimer les écouteurs d'événements pour éviter les fuites de mémoire
-    if (this.keydownHandler) {
-      document.removeEventListener('keydown', this.keydownHandler);
-      this.keydownHandler = null;
-    }
+    
+    // Utilisation d'effect pour les réactions aux changements
+    effect(() => {
+      console.log('Actions updated:', this.actions());
+    });
   }
   
   /**
    * Initialise les actions disponibles dans la toolbar
    */
   private initializeActions(): void {
-    this.actions = [
+    this.actions.set([
       {
         id: 'zoomOut',
         label: 'Zoom Out',
@@ -106,14 +89,14 @@ export class FlowToolbarComponent implements OnInit, OnDestroy, AfterViewInit {
         tooltip: 'Augmenter le zoom',
         shortcut: 'Ctrl + +'
       }
-    ];
+    ]);
   }
   
   /**
    * Configure les raccourcis clavier pour les actions de zoom
    */
   private setupKeyboardShortcuts(): void {
-    this.keydownHandler = (event: KeyboardEvent) => {
+    const keydownHandler = (event: KeyboardEvent) => {
       // Vérifier si Ctrl (ou Cmd sur Mac) est enfoncé
       const ctrlKey = event.ctrlKey || event.metaKey;
       
@@ -136,7 +119,12 @@ export class FlowToolbarComponent implements OnInit, OnDestroy, AfterViewInit {
       }
     };
     
-    document.addEventListener('keydown', this.keydownHandler);
+    document.addEventListener('keydown', keydownHandler);
+    
+    // Nettoyage automatique lors de la destruction du composant
+    this.destroyRef.onDestroy(() => {
+      document.removeEventListener('keydown', keydownHandler);
+    });
   }
   
   /**

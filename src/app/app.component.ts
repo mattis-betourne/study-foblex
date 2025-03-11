@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { BuilderComponent } from './components/builder/builder.component';
@@ -21,11 +21,10 @@ import { FlowService } from './services/flow.service';
 })
 export class AppComponent {
   title = 'study-foblex';
+  flowService = inject(FlowService);
   
   /** État de la sidebar (ouvert par défaut) */
   isSidebarOpen = true;
-  
-  constructor(private flowService: FlowService) {}
   
   /**
    * Gère l'état de la sidebar

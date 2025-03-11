@@ -1,10 +1,21 @@
-import { Component, ViewChild, AfterViewInit, ChangeDetectorRef, HostListener, ElementRef, OnInit, OnDestroy, inject } from '@angular/core';
+import { 
+  Component, 
+  ViewChild, 
+  AfterViewInit, 
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  HostListener, 
+  OnInit, 
+  OnDestroy, 
+  inject,
+  DestroyRef
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FFlowModule, FCanvasComponent, FZoomDirective } from '@foblex/flow';
 import { FlowService } from '../../services/flow.service';
 import { TemporaryNodeDirective } from '../../directives/temporary-node.directive';
 import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
-import { Subscription } from 'rxjs';
 
 /**
  * Composant qui encapsule le flow diagram
@@ -19,9 +30,10 @@ import { Subscription } from 'rxjs';
     FlowToolbarComponent
   ],
   templateUrl: './flow-container.component.html',
-  styleUrls: ['./flow-container.component.css']
+  styleUrls: ['./flow-container.component.css'],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy {
+export class FlowContainerComponent implements OnInit, AfterViewInit {
   /** Référence au composant canvas de Foblex Flow */
   @ViewChild('canvas') canvas!: FCanvasComponent;
   
@@ -31,13 +43,10 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
   /** Référence à la directive de zoom */
   @ViewChild(FZoomDirective) zoomDirective!: FZoomDirective;
   
-  /** Souscription aux changements de draggingItemType */
-  private draggingTypeSubscription!: Subscription;
-  private nodesSubscription!: Subscription;
-  
   /** Services injectés */
-  public flowService = inject(FlowService);
-  private changeDetectorRef = inject(ChangeDetectorRef);
+  readonly flowService = inject(FlowService);
+  private readonly changeDetectorRef = inject(ChangeDetectorRef);
+  private readonly destroyRef = inject(DestroyRef);
   
   constructor() {
     console.log('FlowContainer constructor - Initializing default nodes');
@@ -55,37 +64,28 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
     console.log('Nodes after initialization:', this.flowService.nodes);
     
     // S'abonner aux changements de draggingItemType
-    this.draggingTypeSubscription = this.flowService.draggingItemType$.subscribe(itemType => {
-      console.log('FlowContainer detected draggingItemType change:', itemType);
-      if (itemType) {
-        // Quand le type change (début de drag), créer les nœuds temporaires
-        this.flowService.createTemporaryNodes(itemType);
-        setTimeout(() => {
-          this.changeDetectorRef.detectChanges();
-          console.log('Created temporary nodes after drag start:', this.flowService.temporaryNodes.length);
-        }, 50);
-      }
-    });
+    this.flowService.draggingItemType$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(itemType => {
+        console.log('FlowContainer detected draggingItemType change:', itemType);
+        if (itemType) {
+          // Quand le type change (début de drag), créer les nœuds temporaires
+          this.flowService.createTemporaryNodes(itemType);
+          setTimeout(() => {
+            this.changeDetectorRef.detectChanges();
+            console.log('Created temporary nodes after drag start:', this.flowService.temporaryNodes.length);
+          }, 50);
+        }
+      });
     
     // S'abonner aux changements de nœuds pour le débogage
-    this.nodesSubscription = this.flowService.nodes$.subscribe(nodes => {
-      console.log('Nodes updated:', nodes);
-      // Forcer la détection de changements après chaque mise à jour des nœuds
-      this.changeDetectorRef.detectChanges();
-    });
-  }
-  
-  /**
-   * Nettoyage des souscriptions
-   */
-  ngOnDestroy(): void {
-    // Désabonnement pour éviter les fuites de mémoire
-    if (this.draggingTypeSubscription) {
-      this.draggingTypeSubscription.unsubscribe();
-    }
-    if (this.nodesSubscription) {
-      this.nodesSubscription.unsubscribe();
-    }
+    this.flowService.nodes$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(nodes => {
+        console.log('Nodes updated:', nodes);
+        // Forcer la détection de changements après chaque mise à jour des nœuds
+        this.changeDetectorRef.detectChanges();
+      });
   }
   
   /**
@@ -96,8 +96,8 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
     console.log('Flow component:', this.flow);
     console.log('Zoom directive:', this.zoomDirective);
     
-    // Utiliser setTimeout pour s'assurer que les modifications sont effectuées après le cycle de détection de changement
-    setTimeout(() => {
+    // Utiliser queueMicrotask au lieu de setTimeout pour respecter le cycle de détection Angular
+    queueMicrotask(() => {
       if (this.canvas) {
         // Passer la référence au canvas au service
         this.flowService.setCanvasRef(this.canvas);
@@ -127,7 +127,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
           console.error('Error getting initial canvas scale:', error);
         }
       }
-    }, 0);
+    });
   }
   
   /**
@@ -237,11 +237,33 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
    * Bloque le drop non autorisé et nettoie les éléments créés par erreur
    */
   private blockAndCleanUnauthorizedDrop(): void {
-    // Suppression immédiate des placeholders
+    // Empêcher toute opération sur le flux pendant le nettoyage
+    this.flowService.isCreatingNode = false;
+    
+    // Utiliser setTimeout pour s'assurer que ce code s'exécute après les événements de la bibliothèque
     setTimeout(() => {
-      // Supprimer immédiatement les placeholders et tout nœud qui aurait été créé
+      // Nettoyer les classes visuelles
+      document.body.classList.remove('no-drop-allowed');
+      
+      // Supprimer les placeholders externes
       const placeholders = document.querySelectorAll('.f-external-item-placeholder');
-      placeholders.forEach(el => el.remove());
+      placeholders.forEach(el => {
+        try {
+          el.remove();
+        } catch (e) {
+          console.log('Error removing placeholder:', e);
+        }
+      });
+      
+      // Supprimer les éléments de prévisualisation du drag
+      const previews = document.querySelectorAll('.f-external-item-preview');
+      previews.forEach(el => {
+        try {
+          el.remove();
+        } catch (e) {
+          console.log('Error removing preview:', e);
+        }
+      });
       
       // Supprimer tout nœud visible qui n'est pas enregistré
       const visibleNodes = document.querySelectorAll('[data-fnode]');
@@ -251,9 +273,19 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
         // Si ce nœud n'est pas dans notre liste et n'est pas un nœud temporaire, le supprimer
         if (nodeId && !this.flowService.nodes.some(n => n.id === nodeId) && 
             !nodeEl.classList.contains('temporary-node')) {
-          nodeEl.remove();
+          try {
+            nodeEl.remove();
+          } catch (e) {
+            console.log('Error removing node:', e);
+          }
         }
       });
+      
+      // Nettoyer les nœuds temporaires pour éviter les problèmes d'état
+      this.flowService.clearTemporaryElements();
+      
+      // Forcer la détection de changements pour mettre à jour l'UI
+      this.changeDetectorRef.detectChanges();
       
       // Terminer le drag sans créer de nœud
       this.flowService.endDrag(this.changeDetectorRef);
@@ -324,37 +356,60 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
   }
   
   /**
-   * Événement pour empêcher le drop direct dans le canvas pendant un drag
+   * Gestionnaire pour les événements dragover
+   * @param event L'événement dragover
    */
-  @HostListener('dragover', ['$event'])
   onDragOver(event: DragEvent): void {
-    if (this.flowService.draggingItemType) {
-      // Empêcher le comportement par défaut qui permettrait le drop
-      event.preventDefault();
+    // Ne rien faire si aucun élément n'est en cours de drag
+    if (!this.flowService.draggingItemType) {
+      return;
+    }
+
+    // Vérifier si le drag est au-dessus d'un nœud temporaire
+    const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
+    const isOverTemporaryNode = elementsAtPoint.some(el => 
+      el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
+    );
+
+    // Autoriser le drop uniquement sur les nœuds temporaires
+    if (isOverTemporaryNode) {
+      event.preventDefault(); // Permet le drop
+    } else {
+      // Ne pas appeler preventDefault() pour ne pas autoriser le drop
+      // Mais ajouter une classe visuelle pour indiquer la zone interdite
+      document.body.classList.add('no-drop-allowed');
     }
   }
   
   /**
-   * Événement pour contrôler le drop dans le canvas
+   * Gestionnaire pour les événements drop
+   * @param event L'événement drop
    */
-  @HostListener('drop', ['$event'])
   onDrop(event: DragEvent): void {
-    if (this.flowService.draggingItemType) {
-      // Empêcher le comportement par défaut
+    // Nettoyer la classe visuelle d'interdiction
+    document.body.classList.remove('no-drop-allowed');
+
+    // Vérifier si le drop est sur un nœud temporaire
+    const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
+    const isOverTemporaryNode = elementsAtPoint.some(el => 
+      el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
+    );
+
+    if (this.flowService.draggingItemType && !isOverTemporaryNode) {
+      // Si le drop est en dehors d'un nœud temporaire, bloquer et nettoyer
       event.preventDefault();
       event.stopPropagation();
+      console.log('Drop canceled - not on a temporary node');
+      this.blockAndCleanUnauthorizedDrop();
+      return;
+    }
+
+    // Continuer le traitement normal du drop si c'est sur un nœud temporaire
+    if (this.flowService.draggingItemType && isOverTemporaryNode) {
+      event.preventDefault();
       
-      // Vérifier si le drop est sur un nœud temporaire
-      const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
-      const isOverTemporaryNode = elementsAtPoint.some(el => 
-        el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
-      );
-      
-      if (!isOverTemporaryNode) {
-        console.log('Drop event occurred outside temporary node, blocking it');
-        // Nettoyer et annuler le drop
-        this.blockAndCleanUnauthorizedDrop();
-      }
+      // Ne pas ajouter de logique supplémentaire ici car le drop sera géré 
+      // par le gestionnaire spécifique du nœud temporaire (onDropOnTemporaryNode)
     }
   }
   
@@ -377,23 +432,14 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
   }
   
   /**
-   * Gestionnaire d'événement pour les keydown (Escape pour annuler un drag)
-   * @param event L'événement keydown
-   */
-  @HostListener('window:keydown.escape', ['$event'])
-  onEscapeKey(event: KeyboardEvent): void {
-    if (this.flowService.draggingItemType) {
-      console.log('Escape key pressed during drag, cancelling');
-      this.blockAndCleanUnauthorizedDrop();
-    }
-  }
-  
-  /**
    * Gestionnaire d'événement global pour les dragend
    * @param event L'événement dragend
    */
   @HostListener('window:dragend', ['$event'])
   onGlobalDragEnd(event: DragEvent): void {
+    // Nettoyer la classe visuelle d'interdiction dans tous les cas
+    document.body.classList.remove('no-drop-allowed');
+    
     if (this.flowService.draggingItemType) {
       console.log('Global dragend event captured');
       
