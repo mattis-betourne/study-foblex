@@ -10,6 +10,10 @@ export interface CrmNode {
   text: string;
   /** Position du nœud dans le canvas */
   position: { x: number; y: number };
+  /** Nombre maximum de connexions entrantes autorisées */
+  maxInputs?: number;
+  /** Nombre maximum de connexions sortantes autorisées */
+  maxOutputs?: number;
 }
 
 /**

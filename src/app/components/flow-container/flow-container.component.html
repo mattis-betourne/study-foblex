@@ -9,7 +9,9 @@
   
   <f-flow #flow fDraggable
           [attr.data-dragging]="flowService.draggingItemType ? 'true' : 'false'"
-          (fCreateNode)="onCreateNode($event)">
+          (fCreateNode)="onCreateNode($event)"
+          (fCreateConnection)="onCreateConnection($event)">
+    <f-connection-for-create fBehavior="floating"></f-connection-for-create>
     <f-canvas #canvas fZoom>
       <!-- Les nœuds permanents -->
       @for (node of flowService.nodes; track node.id) {
@@ -17,9 +19,11 @@
              [fNodePosition]="node.position || {x: 0, y: 0}" 
              fNodeOutput 
              [fOutputId]="'output_' + node.id" 
+             [fOutputMultiple]="node.maxOutputs !== 1"
              fOutputConnectableSide="right"
              fNodeInput
              [fInputId]="'input_' + node.id"
+             [fInputMultiple]="node.maxInputs !== 1"
              fInputConnectableSide="right"
              [ngClass]="flowService.getNodeClass(node.type)">
           <div class="p-3 flex items-center font-medium text-white">
@@ -38,9 +42,11 @@
              [fNodePosition]="node.position || {x: 0, y: 0}" 
              fNodeOutput 
              [fOutputId]="'output_' + node.id" 
+             [fOutputMultiple]="node.maxOutputs !== 1"
              fOutputConnectableSide="right"
              fNodeInput
              [fInputId]="'input_' + node.id"
+             [fInputMultiple]="node.maxInputs !== 1"
              fInputConnectableSide="right"
              class="min-w-[180px] rounded-md shadow-md overflow-hidden bg-gradient-to-r from-green-50 to-green-100 opacity-90 border-2 border-dashed border-green-500 cursor-pointer temporary-node hover:scale-105 hover:shadow-lg transition-all"
              [attr.data-node-id]="node.id"
@@ -64,7 +70,8 @@
       @for (connection of flowService.connections; track connection.id) {
         <f-connection 
           [fOutputId]="connection.sourceId" 
-          [fInputId]="connection.targetId">
+          [fInputId]="connection.targetId"
+          fBehavior="floating">
         </f-connection>
       }
       
@@ -73,6 +80,7 @@
         <f-connection 
           [fOutputId]="connection.sourceId" 
           [fInputId]="connection.targetId"
+          fBehavior="floating"
           class="opacity-80 temporary-connection"
           style="--f-connection-stroke: #10b981; --f-connection-stroke-width: 2px; --f-connection-stroke-dasharray: 5,3;">
         </f-connection>

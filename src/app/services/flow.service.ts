@@ -211,7 +211,9 @@ export class FlowService {
         id: generateGuid(),
         type: 'Client',
         text: 'Client 1',
-        position: { x: 100, y: 100 }
+        position: { x: 100, y: 100 },
+        maxInputs: 0,
+        maxOutputs: 1 
       };
       
       // Crée un nœud Task par défaut avec une position définie
@@ -219,7 +221,9 @@ export class FlowService {
         id: generateGuid(),
         type: 'Task',
         text: 'Task 1',
-        position: { x: 350, y: 100 }
+        position: { x: 350, y: 100 },
+        maxInputs: 1,
+        maxOutputs: 1
       };
       
       // Ajoute les nœuds en une seule opération pour éviter les mises à jour partielles
@@ -311,7 +315,9 @@ export class FlowService {
         id: `temp_central_${generateGuid()}`,
         type: itemType,
         text: `${itemType} (Drop here)`,
-        position: { x: 400, y: 300 }
+        position: { x: 400, y: 300 },
+        maxInputs: this.getDefaultMaxInputs(itemType),
+        maxOutputs: this.getDefaultMaxOutputs(itemType)
       };
       
       this._temporaryNodes.set([centralTempNode]);
@@ -324,52 +330,81 @@ export class FlowService {
     for (const existingNode of this._nodes()) {
       console.log('Creating temporary nodes around existing node:', existingNode.id);
       
-      // Créer un nœud temporaire à droite du nœud existant
-      const rightTempNode: CrmNode = {
-        id: `temp_right_${generateGuid()}`,
-        type: itemType,
-        text: `${itemType} (Drop here to connect)`,
-        position: { 
-          x: existingNode.position.x + 250, 
-          y: existingNode.position.y 
-        }
-      };
+      // Compter les connexions existantes pour ce nœud
+      const existingOutputConnections = this._connections().filter(
+        conn => conn.sourceId === `output_${existingNode.id}`
+      );
       
-      // Vérifier que les positions ne se superposent pas avec des nœuds existants
-      if (this.isPositionFree(rightTempNode.position)) {
-        tempNodes.push(rightTempNode);
+      const existingInputConnections = this._connections().filter(
+        conn => conn.targetId === `input_${existingNode.id}`
+      );
+
+      const canAcceptMoreOutputs = existingNode.maxOutputs === undefined || 
+        existingOutputConnections.length < existingNode.maxOutputs;
         
-        // Créer une connexion temporaire pour le nœud à droite
-        const rightConnection: Connection = {
-          id: `temp_conn_${generateGuid()}`,
-          sourceId: `output_${existingNode.id}`,
-          targetId: `input_${rightTempNode.id}`
+      const canAcceptMoreInputs = existingNode.maxInputs === undefined || 
+        existingInputConnections.length < existingNode.maxInputs;
+      
+      // Vérifier si le nœud du type dragué peut avoir des sorties
+      const newNodeCanHaveInputs = this.getDefaultMaxInputs(itemType) > 0;
+      
+      // Créer un nœud temporaire à droite du nœud existant (si le nœud existant peut avoir plus de sorties)
+      if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
+        const rightTempNode: CrmNode = {
+          id: `temp_right_${generateGuid()}`,
+          type: itemType,
+          text: `${itemType} (Drop here to connect)`,
+          position: { 
+            x: existingNode.position.x + 250, 
+            y: existingNode.position.y 
+          },
+          maxInputs: this.getDefaultMaxInputs(itemType),
+          maxOutputs: this.getDefaultMaxOutputs(itemType)
         };
-        tempConnections.push(rightConnection);
+        
+        // Vérifier que les positions ne se superposent pas avec des nœuds existants
+        if (this.isPositionFree(rightTempNode.position)) {
+          tempNodes.push(rightTempNode);
+          
+          // Créer une connexion temporaire pour le nœud à droite
+          const rightConnection: Connection = {
+            id: `temp_conn_${generateGuid()}`,
+            sourceId: `output_${existingNode.id}`,
+            targetId: `input_${rightTempNode.id}`
+          };
+          tempConnections.push(rightConnection);
+        }
       }
       
-      // Créer un nœud temporaire en dessous du nœud existant
-      const bottomTempNode: CrmNode = {
-        id: `temp_bottom_${generateGuid()}`,
-        type: itemType,
-        text: `${itemType} (Drop here to connect)`,
-        position: { 
-          x: existingNode.position.x, 
-          y: existingNode.position.y + 200
-        }
-      };
+      // Vérifier si le nœud du type dragué peut avoir des sorties
+      const newNodeCanHaveOutputs = this.getDefaultMaxOutputs(itemType) > 0;
       
-      // Vérifier que les positions ne se superposent pas
-      if (this.isPositionFree(bottomTempNode.position)) {
-        tempNodes.push(bottomTempNode);
-        
-        // Créer une connexion temporaire pour le nœud en dessous
-        const bottomConnection: Connection = {
-          id: `temp_conn_${generateGuid()}`,
-          sourceId: `output_${existingNode.id}`,
-          targetId: `input_${bottomTempNode.id}`
+      // Créer un nœud temporaire en dessous du nœud existant (si le nœud existant peut avoir plus d'entrées)
+      if (canAcceptMoreInputs && newNodeCanHaveOutputs) {
+        const bottomTempNode: CrmNode = {
+          id: `temp_bottom_${generateGuid()}`,
+          type: itemType,
+          text: `${itemType} (Drop here to connect)`,
+          position: { 
+            x: existingNode.position.x, 
+            y: existingNode.position.y + 200
+          },
+          maxInputs: this.getDefaultMaxInputs(itemType),
+          maxOutputs: this.getDefaultMaxOutputs(itemType)
         };
-        tempConnections.push(bottomConnection);
+        
+        // Vérifier que les positions ne se superposent pas
+        if (this.isPositionFree(bottomTempNode.position)) {
+          tempNodes.push(bottomTempNode);
+          
+          // Créer une connexion temporaire pour le nœud en dessous
+          const bottomConnection: Connection = {
+            id: `temp_conn_${generateGuid()}`,
+            sourceId: `output_${bottomTempNode.id}`,
+            targetId: `input_${existingNode.id}`
+          };
+          tempConnections.push(bottomConnection);
+        }
       }
     }
     
@@ -413,7 +448,9 @@ export class FlowService {
       id: generateGuid(),
       type: this._draggingItemType()!,
       text: `${this._draggingItemType()} ${this._nodes().length + 1}`,
-      position: { ...temporaryNode.position }
+      position: { ...temporaryNode.position },
+      maxInputs: temporaryNode.maxInputs,
+      maxOutputs: temporaryNode.maxOutputs
     };
     
     // Ajouter le nœud permanent
@@ -575,5 +612,57 @@ export class FlowService {
       connections: this._connections()
     };
     this.historyService.pushState(currentState);
+  }
+
+  /**
+   * Retourne le nombre maximum d'entrées autorisées par défaut pour un type de nœud
+   * @param type Le type de nœud
+   * @returns Le nombre maximum d'entrées
+   */
+  private getDefaultMaxInputs(type: string): number {
+    switch (type) {
+      case 'Client':
+        return 1;  // Un client peut avoir une seule entrée
+      case 'Contact':
+        return 1;  // Un contact peut avoir une seule entrée
+      case 'Task':
+        return 5;  // Une tâche peut avoir jusqu'à 5 entrées
+      case 'Email':
+        return 2;  // Un email peut avoir jusqu'à 2 entrées
+      case 'Meeting':
+        return 3;  // Une réunion peut avoir jusqu'à 3 entrées
+      case 'Call':
+        return 2;  // Un appel peut avoir jusqu'à 2 entrées
+      case 'Note':
+        return 1;  // Une note peut avoir une seule entrée
+      default:
+        return 1;  // Par défaut, 1 entrée
+    }
+  }
+
+  /**
+   * Retourne le nombre maximum de sorties autorisées par défaut pour un type de nœud
+   * @param type Le type de nœud
+   * @returns Le nombre maximum de sorties
+   */
+  private getDefaultMaxOutputs(type: string): number {
+    switch (type) {
+      case 'Client':
+        return 3;  // Un client peut avoir jusqu'à 3 sorties
+      case 'Contact':
+        return 2;  // Un contact peut avoir jusqu'à 2 sorties
+      case 'Task':
+        return 2;  // Une tâche peut avoir jusqu'à 2 sorties
+      case 'Email':
+        return 1;  // Un email peut avoir 1 sortie
+      case 'Meeting':
+        return 2;  // Une réunion peut avoir jusqu'à 2 sorties
+      case 'Call':
+        return 1;  // Un appel peut avoir 1 sortie
+      case 'Note':
+        return 0;  // Une note ne peut pas avoir de sortie
+      default:
+        return 1;  // Par défaut, 1 sortie
+    }
   }
 } 

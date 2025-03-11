@@ -16,6 +16,7 @@ import { FFlowModule, FCanvasComponent, FZoomDirective } from '@foblex/flow';
 import { FlowService } from '../../services/flow.service';
 import { TemporaryNodeDirective } from '../../directives/temporary-node.directive';
 import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
+import { Connection, CrmNode } from '../../models/crm.models';
 
 /**
  * Composant qui encapsule le flow diagram
@@ -454,5 +455,94 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
         this.blockAndCleanUnauthorizedDrop();
       }
     }
+  }
+  
+  /**
+   * Gère la création d'une connexion entre deux nœuds
+   * @param event L'événement de création de connexion
+   */
+  onCreateConnection(event: any): void {
+    console.log('Connection creation event:', event);
+    
+    // Extraire les IDs des nœuds à partir des IDs des points de connexion
+    const outputNodeId = event.outputId.replace('output_', '');
+    const inputNodeId = event.inputId.replace('input_', '');
+    
+    // Trouver les nœuds concernés
+    const sourceNode = this.flowService.nodes.find(node => node.id === outputNodeId);
+    const targetNode = this.flowService.nodes.find(node => node.id === inputNodeId);
+    
+    if (!sourceNode || !targetNode) {
+      console.warn('Source or target node not found');
+      event.prevent();
+      return;
+    }
+    
+    // Compter les connexions existantes pour ces nœuds
+    const existingOutputConnections = this.flowService.connections.filter(
+      conn => conn.sourceId === event.outputId
+    );
+    
+    const existingInputConnections = this.flowService.connections.filter(
+      conn => conn.targetId === event.inputId
+    );
+    
+    // Vérifier les limites de connexions
+    if (sourceNode.maxOutputs !== undefined && 
+        existingOutputConnections.length >= sourceNode.maxOutputs) {
+      console.warn(`Max outputs (${sourceNode.maxOutputs}) reached for node ${outputNodeId}`);
+      
+      // Afficher un message à l'utilisateur
+      this.showConnectionLimitMessage(
+        `Le nœud "${sourceNode.type}" a atteint sa limite de ${sourceNode.maxOutputs} connexion(s) sortante(s)`
+      );
+      
+      event.prevent();
+      return;
+    }
+    
+    if (targetNode.maxInputs !== undefined && 
+        existingInputConnections.length >= targetNode.maxInputs) {
+      console.warn(`Max inputs (${targetNode.maxInputs}) reached for node ${inputNodeId}`);
+      
+      // Afficher un message à l'utilisateur
+      this.showConnectionLimitMessage(
+        `Le nœud "${targetNode.type}" a atteint sa limite de ${targetNode.maxInputs} connexion(s) entrante(s)`
+      );
+      
+      event.prevent();
+      return;
+    }
+    
+    // Si tout est valide, créer la connexion
+    const newConnection: Connection = {
+      id: `conn_${Date.now()}`,
+      sourceId: event.outputId,
+      targetId: event.inputId
+    };
+    
+    // Ajouter la connexion
+    this.flowService.addConnection(newConnection);
+  }
+  
+  /**
+   * Affiche un message temporaire à l'utilisateur
+   * @param message Le message à afficher
+   */
+  private showConnectionLimitMessage(message: string): void {
+    // Créer un élément de message
+    const messageElement = document.createElement('div');
+    messageElement.textContent = message;
+    messageElement.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50';
+    
+    // Ajouter l'élément au DOM
+    document.body.appendChild(messageElement);
+    
+    // Supprimer l'élément après 3 secondes
+    setTimeout(() => {
+      if (messageElement.parentNode) {
+        messageElement.parentNode.removeChild(messageElement);
+      }
+    }, 3000);
   }
 } 
