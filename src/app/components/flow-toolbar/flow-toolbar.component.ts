@@ -1,8 +1,10 @@
 import { Component, ChangeDetectionStrategy, inject, signal, computed, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { SafeHtmlPipe } from '../../pipes/safe-html.pipe';
 import { FlowService } from '../../services/flow.service';
-import { HistoryService } from '../../services/history.service';
+import { HistoryService, FlowState } from '../../services/history.service';
+import { ZoomService } from '../../services/zoom.service';
 
 /**
  * Interface pour les actions de la toolbar
@@ -37,16 +39,18 @@ interface ToolbarAction {
 })
 export class FlowToolbarComponent {
   /** Services injectés */
-  private readonly flowService = inject(FlowService);
   private readonly historyService = inject(HistoryService);
+  private readonly zoomService = inject(ZoomService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Actions disponibles dans la toolbar */
   protected readonly actions = signal<ToolbarAction[]>([]);
   
-  /** États dérivés des services pour les actions undo/redo */
+  /** États dérivés des services pour les actions */
   protected readonly canUndo = this.historyService.canUndo;
   protected readonly canRedo = this.historyService.canRedo;
+  protected readonly canZoomIn = this.zoomService.canZoomIn;
+  protected readonly canZoomOut = this.zoomService.canZoomOut;
 
   constructor() {
     this.initializeActions();
@@ -154,21 +158,21 @@ export class FlowToolbarComponent {
    * Augmente le niveau de zoom
    */
   zoomIn(): void {
-    this.flowService.zoomIn();
+    this.zoomService.zoomIn();
   }
 
   /**
    * Diminue le niveau de zoom
    */
   zoomOut(): void {
-    this.flowService.zoomOut();
+    this.zoomService.zoomOut();
   }
 
   /**
    * Réinitialise le zoom et centre le canvas
    */
   resetZoom(): void {
-    this.flowService.resetZoom();
+    this.zoomService.resetZoom();
   }
   
   /**
@@ -177,7 +181,7 @@ export class FlowToolbarComponent {
   undo(): void {
     if (this.canUndo()) {
       console.log('Executing undo action');
-      this.flowService.undo();
+      this.historyService.undoAndUpdateFlow();
     } else {
       console.log('Undo action not available');
     }
@@ -189,7 +193,7 @@ export class FlowToolbarComponent {
   redo(): void {
     if (this.canRedo()) {
       console.log('Executing redo action');
-      this.flowService.redo();
+      this.historyService.redoAndUpdateFlow();
     } else {
       console.log('Redo action not available');
     }
@@ -208,6 +212,16 @@ export class FlowToolbarComponent {
     
     if (action.id === 'redo' && !this.canRedo()) {
       console.log('Cannot execute redo action: not available');
+      return;
+    }
+    
+    if (action.id === 'zoom-in' && !this.canZoomIn()) {
+      console.log('Cannot execute zoom in action: already at max zoom');
+      return;
+    }
+    
+    if (action.id === 'zoom-out' && !this.canZoomOut()) {
+      console.log('Cannot execute zoom out action: already at min zoom');
       return;
     }
     

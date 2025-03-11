@@ -17,6 +17,8 @@ import { FlowService } from '../../services/flow.service';
 import { TemporaryNodeDirective } from '../../directives/temporary-node.directive';
 import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
 import { Connection, CrmNode } from '../../models/crm.models';
+import { ZoomService } from '../../services/zoom.service';
+import { TemporaryNodeService } from '../../services/temporary-node.service';
 
 /**
  * Composant qui encapsule le flow diagram
@@ -46,6 +48,8 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   
   /** Services injectés */
   readonly flowService = inject(FlowService);
+  readonly zoomService = inject(ZoomService);
+  readonly temporaryNodeService = inject(TemporaryNodeService);
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
   private readonly destroyRef = inject(DestroyRef);
   
@@ -65,7 +69,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     console.log('Nodes after initialization:', this.flowService.nodes);
     
     // S'abonner aux changements de draggingItemType
-    this.flowService.draggingItemType$
+    this.temporaryNodeService.draggingItemType$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(itemType => {
         console.log('FlowContainer detected draggingItemType change:', itemType);
@@ -101,11 +105,12 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     queueMicrotask(() => {
       if (this.canvas) {
         // Passer la référence au canvas au service
-        this.flowService.setCanvasRef(this.canvas);
+        // this.flowService.setCanvasRef(this.canvas);
         
-        // Passer la référence à la directive de zoom au service
+        // Passer la référence à la directive de zoom au service dédié
         if (this.zoomDirective) {
-          this.flowService.setZoomDirective(this.zoomDirective);
+          console.log('Zoom directive:', this.zoomDirective);
+          this.zoomService.setZoomDirective(this.zoomDirective);
           
           // Vérifier que la directive de zoom est bien initialisée
           try {
@@ -184,6 +189,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    * @param temporaryNodeId L'ID du nœud temporaire
    */
   onDropOnTemporaryNode(temporaryNodeId: string): void {
+    console.log('Drop detected on temporary node:', temporaryNodeId);
     this.flowService.handleDropOnTemporaryNode(temporaryNodeId, this.changeDetectorRef);
   }
   
@@ -192,7 +198,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    * @param event L'événement pointerup
    */
   onCanvasPointerUp(event: PointerEvent): void {
-    if (this.flowService.draggingItemType && !this.flowService.isCreatingNode) {
+    if (this.temporaryNodeService.draggingItemType && !this.temporaryNodeService.isCreatingNode) {
       console.log('Canvas pointerup event detected during drag');
       
       // Bloquer l'événement pour empêcher toute propagation
@@ -239,7 +245,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    */
   private blockAndCleanUnauthorizedDrop(): void {
     // Empêcher toute opération sur le flux pendant le nettoyage
-    this.flowService.isCreatingNode = false;
+    this.temporaryNodeService.isCreatingNode = false;
     
     // Utiliser setTimeout pour s'assurer que ce code s'exécute après les événements de la bibliothèque
     setTimeout(() => {
@@ -299,7 +305,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    */
   @HostListener('window:mouseup', ['$event'])
   handleFlowEvent(event: MouseEvent): void {
-    if (this.flowService.draggingItemType && !this.flowService.isCreatingNode) {
+    if (this.temporaryNodeService.draggingItemType && !this.temporaryNodeService.isCreatingNode) {
       console.log('Global mouse up event during drag');
       
       // Bloquer les événements au niveau document
@@ -344,7 +350,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    */
   @HostListener('window:fCreateNode', ['$event'])
   onGlobalCreateNode(event: CustomEvent): void {
-    if (this.flowService.draggingItemType && !this.flowService.isCreatingNode) {
+    if (this.temporaryNodeService.draggingItemType && !this.temporaryNodeService.isCreatingNode) {
       console.log('Intercepted global fCreateNode event during drag, preventing default');
       
       // Empêcher la création du nœud
@@ -422,7 +428,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     console.log('Flow container direct drag start with item type:', itemType);
     // Mise à jour du type d'élément en cours de drag dans le service
     // Note: La création des nœuds temporaires est maintenant gérée par la souscription à draggingItemType$
-    this.flowService.draggingItemType = itemType;
+    this.temporaryNodeService.draggingItemType = itemType;
   }
   
   /**
@@ -441,7 +447,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     // Nettoyer la classe visuelle d'interdiction dans tous les cas
     document.body.classList.remove('no-drop-allowed');
     
-    if (this.flowService.draggingItemType) {
+    if (this.temporaryNodeService.draggingItemType) {
       console.log('Global dragend event captured');
       
       // Vérifier si le drop est sur un nœud temporaire

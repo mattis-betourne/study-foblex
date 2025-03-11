@@ -3,7 +3,9 @@ import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { generateGuid } from '@foblex/utils';
 import { CrmNode, Connection } from '../models/crm.models';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { HistoryService, FlowState } from './history.service';
+import { HistoryService, FlowState, FlowStateUpdater } from './history.service';
+import { ZoomService } from './zoom.service';
+import { TemporaryNodeService } from './temporary-node.service';
 import { TemporaryNodeStrategyFactory } from '../strategies/temporary-node-strategies';
 
 /**
@@ -12,39 +14,43 @@ import { TemporaryNodeStrategyFactory } from '../strategies/temporary-node-strat
 @Injectable({
   providedIn: 'root'
 })
-export class FlowService {
+export class FlowService implements FlowStateUpdater {
   // Signaux pour l'état principal
   private readonly _nodes = signal<CrmNode[]>([]);
   private readonly _connections = signal<Connection[]>([]);
-  private readonly _temporaryNodes = signal<CrmNode[]>([]);
-  private readonly _temporaryConnections = signal<Connection[]>([]);
-  private readonly _draggingItemType = signal<string | null>(null);
-  private readonly _isCreatingNode = signal<boolean>(false);
-
+  
   /**
    * Référence au composant canvas pour les opérations de zoom
+   * @private
    */
   private _canvasRef: any = null;
 
-  /**
-   * Référence à la directive de zoom pour les opérations de zoom
-   */
-  private _zoomDirective: any = null;
+  // Services injectés
+  private readonly historyService = inject(HistoryService);
+  private readonly zoomService = inject(ZoomService);
+  private readonly temporaryNodeService = inject(TemporaryNodeService);
 
-  // Pour la compatibilité avec le code existant qui utilise l'API Observable
+  // Observables pour les composants
   readonly nodes$ = toObservable(this._nodes);
   readonly connections$ = toObservable(this._connections);
-  readonly temporaryNodes$ = toObservable(this._temporaryNodes);
-  readonly temporaryConnections$ = toObservable(this._temporaryConnections);
-  readonly draggingItemType$ = toObservable(this._draggingItemType);
-  readonly isCreatingNode$ = toObservable(this._isCreatingNode);
-
-  private readonly historyService = inject(HistoryService);
-
-  // Créer la factory des stratégies
-  private readonly strategyFactory = new TemporaryNodeStrategyFactory(() => this._nodes());
+  readonly temporaryNodes$ = this.temporaryNodeService.temporaryNodes$;
+  readonly temporaryConnections$ = this.temporaryNodeService.temporaryConnections$;
+  readonly draggingItemType$ = this.temporaryNodeService.draggingItemType$;
+  readonly isCreatingNode$ = this.temporaryNodeService.isCreatingNode$;
 
   constructor() {
+    // Enregistrer ce service comme FlowStateUpdater dans HistoryService
+    this.historyService.registerFlowUpdater(this);
+    
+    // Initialiser les fonctions de support pour le service de nœuds temporaires
+    this.temporaryNodeService.setSupport(
+      this.isPositionFree.bind(this),
+      this.getDefaultMaxInputs.bind(this),
+      this.getDefaultMaxOutputs.bind(this),
+      () => this._nodes(),
+      () => this._connections()
+    );
+
     // Capturer l'état initial après l'initialisation des données,
     // mais seulement si nous avons déjà des données
     setTimeout(() => {
@@ -53,16 +59,6 @@ export class FlowService {
         this.saveState();
       }
     }, 0);
-
-    // Création d'un effet pour déboguer les changements d'état (utile en développement)
-    // effect(() => {
-    //   console.log('[FlowService] État mis à jour:', {
-    //     nodes: this._nodes().length,
-    //     connections: this._connections().length,
-    //     tempNodes: this._temporaryNodes().length,
-    //     tempConnections: this._temporaryConnections().length
-    //   });
-    // });
   }
 
   /**
@@ -83,42 +79,58 @@ export class FlowService {
    * @returns Les nœuds temporaires actuels
    */
   get temporaryNodes(): CrmNode[] {
-    return this._temporaryNodes();
+    return this.temporaryNodeService.temporaryNodes;
   }
 
   /**
    * @returns Les connexions temporaires actuelles
    */
   get temporaryConnections(): Connection[] {
-    return this._temporaryConnections();
+    return this.temporaryNodeService.temporaryConnections;
   }
 
   /**
    * @returns Le type d'élément en cours de drag
    */
   get draggingItemType(): string | null {
-    return this._draggingItemType();
+    return this.temporaryNodeService.draggingItemType;
   }
 
   /**
    * @param value Le type d'élément en cours de drag
    */
   set draggingItemType(value: string | null) {
-    this._draggingItemType.set(value);
+    this.temporaryNodeService.draggingItemType = value;
   }
 
   /**
    * @returns Si un nœud est en cours de création
    */
   get isCreatingNode(): boolean {
-    return this._isCreatingNode();
+    return this.temporaryNodeService.isCreatingNode;
   }
 
   /**
    * @param value Si un nœud est en cours de création
    */
   set isCreatingNode(value: boolean) {
-    this._isCreatingNode.set(value);
+    this.temporaryNodeService.isCreatingNode = value;
+  }
+
+  /**
+   * Définit les nœuds du diagramme (pour l'historique)
+   * @param nodes Les nœuds à définir
+   */
+  setNodes(nodes: CrmNode[]): void {
+    this._nodes.set(nodes);
+  }
+
+  /**
+   * Définit les connexions du diagramme (pour l'historique)
+   * @param connections Les connexions à définir
+   */
+  setConnections(connections: Connection[]): void {
+    this._connections.set(connections);
   }
 
   /**
@@ -134,7 +146,7 @@ export class FlowService {
    * @param zoomDirective Référence à la directive de zoom
    */
   setZoomDirective(zoomDirective: any): void {
-    this._zoomDirective = zoomDirective;
+    this.zoomService.setZoomDirective(zoomDirective);
   }
 
   /**
@@ -142,12 +154,7 @@ export class FlowService {
    * @param point Point central du zoom (optionnel)
    */
   zoomIn(point?: any): void {
-    console.log('Zooming in...');
-    if (this._zoomDirective) {
-      this._zoomDirective.zoomIn(point);
-    } else {
-      console.warn('Zoom directive non disponible');
-    }
+    this.zoomService.zoomIn(point);
   }
 
   /**
@@ -155,24 +162,14 @@ export class FlowService {
    * @param point Point central du zoom (optionnel)
    */
   zoomOut(point?: any): void {
-    console.log('Zooming out...');
-    if (this._zoomDirective) {
-      this._zoomDirective.zoomOut(point);
-    } else {
-      console.warn('Zoom directive non disponible');
-    }
+    this.zoomService.zoomOut(point);
   }
 
   /**
    * Réinitialise le zoom et centre le canvas
    */
   resetZoom(): void {
-    console.log('Resetting zoom...');
-    if (this._zoomDirective) {
-      this._zoomDirective.reset();
-    } else {
-      console.warn('Zoom directive non disponible');
-    }
+    this.zoomService.resetZoom();
   }
 
   /**
@@ -250,7 +247,10 @@ export class FlowService {
   }
 
   /**
-   * Vérifie si une position est libre (pas de nœud existant à cette position)
+   * Vérifie si une position est libre (pas de nœuds à proximité)
+   * @param position Position à vérifier
+   * @returns true si la position est libre
+   * @private
    */
   private isPositionFree(position: {x: number, y: number}): boolean {
     // Considérer une marge de 50px autour des nœuds existants
@@ -265,19 +265,7 @@ export class FlowService {
    * Nettoie les éléments temporaires
    */
   clearTemporaryElements(): void {
-    // Ne déclencher de sauvegarde que si nous avions des éléments temporaires
-    const hadTemporaryElements = 
-      this._temporaryNodes().length > 0 || 
-      this._temporaryConnections().length > 0;
-    
-    // Effacer les nœuds et connexions temporaires
-    this._temporaryNodes.set([]);
-    this._temporaryConnections.set([]);
-    
-    // Si nous avons supprimé des éléments temporaires, sauvegarder l'état
-    if (hadTemporaryElements) {
-      this.saveState();
-    }
+    this.temporaryNodeService.clearTemporaryElements();
   }
 
   /**
@@ -285,181 +273,81 @@ export class FlowService {
    * @param itemType Le type d'élément en cours de drag
    */
   createTemporaryNodes(itemType: string): void {
-    console.log('Creating temporary nodes for item type:', itemType);
-    
-    // D'abord, nettoyer les anciens nœuds temporaires
-    this.clearTemporaryElements();
-    
-    // Pour chaque nœud existant, créer un nœud temporaire qui pourrait s'y connecter
-    if (this._nodes().length === 0) {
-      console.log('No existing nodes to create temporary connections to');
-      
-      // Créer un nœud temporaire au centre si aucun nœud n'existe
-      const centralTempNode: CrmNode = {
-        id: `temp_central_${generateGuid()}`,
-        type: itemType,
-        text: `${itemType} (Drop here)`,
-        position: { x: 400, y: 300 },
-        maxInputs: this.getDefaultMaxInputs(itemType),
-        maxOutputs: this.getDefaultMaxOutputs(itemType)
-      };
-      
-      this._temporaryNodes.set([centralTempNode]);
-      return;
-    }
-    
-    const tempNodes: CrmNode[] = [];
-    const tempConnections: Connection[] = [];
-    
-    // Pour chaque nœud existant, appliquer la stratégie appropriée
-    for (const existingNode of this._nodes()) {
-      console.log('Creating temporary nodes around existing node:', existingNode.id);
-      
-      // Compter les connexions existantes pour ce nœud
-      const existingOutputConnections = this._connections().filter(
-        conn => conn.sourceId === `output_${existingNode.id}`
-      );
-      
-      const existingInputConnections = this._connections().filter(
-        conn => conn.targetId === `input_${existingNode.id}`
-      );
-      
-      // Obtenir la stratégie appropriée pour ce nœud
-      const strategy = this.strategyFactory.getStrategy(
-        existingNode,
-        existingOutputConnections,
-        existingInputConnections,
-        itemType
-      );
-      
-      // Appliquer la stratégie pour créer des nœuds temporaires
-      const result = strategy.createTemporaryNodes(
-        existingNode,
-        existingOutputConnections,
-        existingInputConnections,
-        itemType,
-        (position) => this.isPositionFree(position),
-        (type) => this.getDefaultMaxInputs(type),
-        (type) => this.getDefaultMaxOutputs(type)
-      );
-      
-      // Ajouter les nœuds et connexions temporaires
-      tempNodes.push(...result.nodes);
-      tempConnections.push(...result.connections);
-    }
-    
-    console.log('Created temporary nodes:', tempNodes.length);
-    this._temporaryNodes.set(tempNodes);
-    this._temporaryConnections.set(tempConnections);
+    this.temporaryNodeService.createTemporaryNodes(itemType);
   }
 
   /**
-   * Gère le drop sur un nœud temporaire
-   * @param temporaryNodeId ID du nœud temporaire
+   * Traite la fin d'un glisser-déposer sur un nœud temporaire
+   * @param temporaryNodeId Identifiant du nœud temporaire
    * @param changeDetectorRef Référence au détecteur de changements
    */
   handleDropOnTemporaryNode(temporaryNodeId: string, changeDetectorRef: ChangeDetectorRef): void {
-    console.log('Dropped on temporary node:', temporaryNodeId);
+    const dropResult = this.temporaryNodeService.handleDropOnTemporaryNode(temporaryNodeId);
     
-    // Marquer que nous commençons la création d'un nœud
-    this._isCreatingNode.set(true);
-    
-    if (!this._draggingItemType()) {
-      this.clearTemporaryElements();
-      this._isCreatingNode.set(false);
+    if (!dropResult) {
       return;
     }
     
-    // Trouver le nœud temporaire concerné
-    const temporaryNode = this._temporaryNodes().find(node => node.id === temporaryNodeId);
-    if (!temporaryNode) {
-      this.clearTemporaryElements();
-      this._isCreatingNode.set(false);
-      return;
-    }
+    const { nodeType, position, connections } = dropResult;
     
-    // Trouver les connexions temporaires associées à ce nœud
-    const relatedTemporaryConnections = this._temporaryConnections().filter(
-      conn => conn.sourceId === `output_${temporaryNodeId}` || conn.targetId === `input_${temporaryNodeId}`
-    );
+    // Générer un identifiant unique pour le nouveau nœud
+    const newNodeId = `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     
-    // Créer un nœud permanent à la place du nœud temporaire
-    const permanentNode: CrmNode = {
-      id: generateGuid(),
-      type: this._draggingItemType()!,
-      text: `${this._draggingItemType()} ${this._nodes().length + 1}`,
-      position: { ...temporaryNode.position },
-      maxInputs: temporaryNode.maxInputs,
-      maxOutputs: temporaryNode.maxOutputs
+    // Créer le nouveau nœud
+    const newNode: CrmNode = {
+      id: newNodeId,
+      type: nodeType,
+      text: `New ${nodeType}`,
+      position: position,
+      maxInputs: this.getDefaultMaxInputs(nodeType),
+      maxOutputs: this.getDefaultMaxOutputs(nodeType)
     };
     
-    // Ajouter le nœud permanent
-    this.addNode(permanentNode);
+    // Ajouter le nœud
+    this.addNode(newNode);
     
-    // Créer des connexions permanentes pour remplacer les temporaires
-    for (const tempConn of relatedTemporaryConnections) {
-      // Déterminer si le nœud temporaire est la source ou la cible
-      const isSource = tempConn.sourceId.includes(temporaryNodeId);
+    // Créer les connexions
+    connections.forEach(conn => {
+      // Déterminer si le nœud créé sera la source ou la cible
+      const isNewNodeSource = conn.sourceId === '';
+      const isNewNodeTarget = conn.targetId === '';
       
-      // Créer une connexion permanente en fonction de la position du nœud temporaire
-      const permanentConnection: Connection = {
-        id: generateGuid(),
-        sourceId: isSource 
-          ? `output_${permanentNode.id}` 
-          : tempConn.sourceId,
-        targetId: !isSource 
-          ? `input_${permanentNode.id}` 
-          : tempConn.targetId
+      // Préparer les identifiants en conservant le format input_/output_
+      let source = isNewNodeSource ? `output_${newNodeId}` : conn.sourceId;
+      let target = isNewNodeTarget ? `input_${newNodeId}` : conn.targetId;
+      
+      console.log(`Creating connection: ${source} -> ${target}`);
+      
+      // Générer un identifiant unique pour la connexion
+      const connId = `conn-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      
+      // Créer et ajouter la connexion
+      const newConnection: Connection = {
+        id: connId,
+        sourceId: source,
+        targetId: target
       };
       
-      this.addConnection(permanentConnection);
-    }
+      this.addConnection(newConnection);
+    });
     
-    // Nettoyer les éléments temporaires
-    this.clearTemporaryElements();
-    
-    // Réinitialiser l'état
-    this._draggingItemType.set(null);
-    
-    // Supprimer tout élément de placeholder qui aurait pu être créé par le système de drag-and-drop de Foblex
-    setTimeout(() => {
-      const placeholders = document.querySelectorAll('.f-external-item-placeholder');
-      placeholders.forEach(el => el.remove());
-      
-      // Force la mise à jour de la vue
+    // Forcer la mise à jour du composant
+    if (changeDetectorRef) {
       changeDetectorRef.detectChanges();
-      
-      // Réinitialiser le flag de création de nœud
-      this._isCreatingNode.set(false);
-    }, 50);
+    }
   }
 
   /**
-   * Termine l'opération de drag
+   * Termine le glisser-déposer
    * @param changeDetectorRef Référence au détecteur de changements
    */
   endDrag(changeDetectorRef: ChangeDetectorRef): void {
-    console.log('Ending drag operation');
-    
-    // Nettoyer les éléments temporaires
+    // Réinitialiser les états
+    this.temporaryNodeService.draggingItemType = null;
+    this.temporaryNodeService.isCreatingNode = false;
     this.clearTemporaryElements();
     
-    // Réinitialiser l'état
-    this._draggingItemType.set(null);
-    this._isCreatingNode.set(false);
-    
-    // Nettoyer les éléments visuels
-    const placeholders = document.querySelectorAll('.f-external-item-placeholder');
-    placeholders.forEach(el => el.remove());
-    
-    const previews = document.querySelectorAll('.f-external-item-preview');
-    previews.forEach(el => el.remove());
-    
-    document.body.style.cursor = '';
-    document.body.classList.remove('f-dragging');
-    document.body.classList.remove('no-drop-allowed');
-    
-    // Force la mise à jour de la vue
+    // Forcer la mise à jour du composant
     if (changeDetectorRef) {
       changeDetectorRef.detectChanges();
     }
@@ -558,11 +446,7 @@ export class FlowService {
    */
   undo(): void {
     console.log('Undo requested');
-    const previousState = this.historyService.undo();
-    if (previousState) {
-      this._nodes.set(previousState.nodes);
-      this._connections.set(previousState.connections);
-    }
+    this.historyService.undoAndUpdateFlow();
   }
 
   /**
@@ -570,22 +454,15 @@ export class FlowService {
    */
   redo(): void {
     console.log('Redo requested');
-    const nextState = this.historyService.redo();
-    if (nextState) {
-      this._nodes.set(nextState.nodes);
-      this._connections.set(nextState.connections);
-    }
+    this.historyService.redoAndUpdateFlow();
   }
 
   /**
    * Sauvegarde l'état actuel dans l'historique
+   * @private
    */
   private saveState(): void {
-    const currentState: FlowState = {
-      nodes: this._nodes(),
-      connections: this._connections()
-    };
-    this.historyService.pushState(currentState);
+    this.historyService.saveFlowState(this._nodes(), this._connections());
   }
 
   /**

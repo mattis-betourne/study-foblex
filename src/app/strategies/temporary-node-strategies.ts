@@ -29,71 +29,93 @@ export class StandardNodeStrategy implements TemporaryNodeStrategy {
       connections: []
     };
     
+    // Vérifier si le nœud existant peut accepter plus de connexions
     const canAcceptMoreOutputs = node.maxOutputs === undefined || 
       existingOutputConnections.length < node.maxOutputs;
       
     const canAcceptMoreInputs = node.maxInputs === undefined || 
       existingInputConnections.length < node.maxInputs;
     
-    // Vérifier si le nœud du type dragué peut avoir des entrées
-    const newNodeCanHaveInputs = getDefaultMaxInputs(itemType) > 0;
+    // Obtenir les limites du type de nœud en cours de drag
+    const maxInputsForType = getDefaultMaxInputs(itemType);
+    const maxOutputsForType = getDefaultMaxOutputs(itemType);
     
-    // Créer un nœud temporaire à droite du nœud existant
+    // Vérifier si le nœud du type dragué peut avoir des entrées
+    const newNodeCanHaveInputs = maxInputsForType > 0;
+    
+    console.log(`StandardNodeStrategy - Node ${node.id} (${node.type}):
+      - Can accept more outputs: ${canAcceptMoreOutputs}
+      - Can accept more inputs: ${canAcceptMoreInputs}
+      - New node can have inputs: ${newNodeCanHaveInputs}
+      - New node can have outputs: ${maxOutputsForType > 0}
+      - Max inputs for type ${itemType}: ${maxInputsForType}
+      - Max outputs for type ${itemType}: ${maxOutputsForType}`);
+    
+    // Créer un nœud temporaire à droite du nœud existant (le nœud existant -> nouveau nœud)
     if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
-      const rightTempNode: CrmNode = {
-        id: `temp_right_${generateGuid()}`,
-        type: itemType,
-        text: `${itemType} (Drop here to connect)`,
-        position: { 
-          x: node.position.x + 250, 
-          y: node.position.y 
-        },
-        maxInputs: getDefaultMaxInputs(itemType),
-        maxOutputs: getDefaultMaxOutputs(itemType)
-      };
-      
-      // Vérifier que les positions ne se superposent pas
-      if (isPositionFree(rightTempNode.position)) {
-        result.nodes.push(rightTempNode);
-        
-        // Créer une connexion temporaire
-        const rightConnection: Connection = {
-          id: `temp_conn_${generateGuid()}`,
-          sourceId: `output_${node.id}`,
-          targetId: `input_${rightTempNode.id}`
+      // Vérifier si le type de nœud existant et le type à créer sont compatibles
+      // Par exemple, pour les types de communication qui ne peuvent avoir qu'1 entrée et 1 sortie
+      const existingTypeMaxOutputs = getDefaultMaxOutputs(node.type);
+      if (existingTypeMaxOutputs > 0) {
+        const rightTempNode: CrmNode = {
+          id: `temp_right_${generateGuid()}`,
+          type: itemType,
+          text: `${itemType} (Drop here to connect)`,
+          position: { 
+            x: node.position.x + 250, 
+            y: node.position.y 
+          },
+          maxInputs: maxInputsForType,
+          maxOutputs: maxOutputsForType
         };
-        result.connections.push(rightConnection);
+        
+        // Vérifier que les positions ne se superposent pas
+        if (isPositionFree(rightTempNode.position)) {
+          result.nodes.push(rightTempNode);
+          
+          // Créer une connexion temporaire
+          const rightConnection: Connection = {
+            id: `temp_conn_${generateGuid()}`,
+            sourceId: `output_${node.id}`,
+            targetId: `input_${rightTempNode.id}`
+          };
+          result.connections.push(rightConnection);
+        }
       }
     }
     
     // Vérifier si le nœud du type dragué peut avoir des sorties
-    const newNodeCanHaveOutputs = getDefaultMaxOutputs(itemType) > 0;
+    const newNodeCanHaveOutputs = maxOutputsForType > 0;
     
-    // Créer un nœud temporaire en dessous du nœud existant
+    // Créer un nœud temporaire en dessous du nœud existant (nouveau nœud -> nœud existant)
     if (canAcceptMoreInputs && newNodeCanHaveOutputs) {
-      const bottomTempNode: CrmNode = {
-        id: `temp_bottom_${generateGuid()}`,
-        type: itemType,
-        text: `${itemType} (Drop here to connect)`,
-        position: { 
-          x: node.position.x, 
-          y: node.position.y + 200
-        },
-        maxInputs: getDefaultMaxInputs(itemType),
-        maxOutputs: getDefaultMaxOutputs(itemType)
-      };
-      
-      // Vérifier que les positions ne se superposent pas
-      if (isPositionFree(bottomTempNode.position)) {
-        result.nodes.push(bottomTempNode);
-        
-        // Créer une connexion temporaire
-        const bottomConnection: Connection = {
-          id: `temp_conn_${generateGuid()}`,
-          sourceId: `output_${bottomTempNode.id}`,
-          targetId: `input_${node.id}`
+      // Vérifier si le type de nœud existant et le type à créer sont compatibles
+      const existingTypeMaxInputs = getDefaultMaxInputs(node.type);
+      if (existingTypeMaxInputs > 0) {
+        const bottomTempNode: CrmNode = {
+          id: `temp_bottom_${generateGuid()}`,
+          type: itemType,
+          text: `${itemType} (Drop here to connect)`,
+          position: { 
+            x: node.position.x, 
+            y: node.position.y + 200
+          },
+          maxInputs: maxInputsForType,
+          maxOutputs: maxOutputsForType
         };
-        result.connections.push(bottomConnection);
+        
+        // Vérifier que les positions ne se superposent pas
+        if (isPositionFree(bottomTempNode.position)) {
+          result.nodes.push(bottomTempNode);
+          
+          // Créer une connexion temporaire
+          const bottomConnection: Connection = {
+            id: `temp_conn_${generateGuid()}`,
+            sourceId: `output_${bottomTempNode.id}`,
+            targetId: `input_${node.id}`
+          };
+          result.connections.push(bottomConnection);
+        }
       }
     }
     
