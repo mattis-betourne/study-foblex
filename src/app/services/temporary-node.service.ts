@@ -1,7 +1,8 @@
-import { Injectable, signal, inject } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
-import { CrmNode, Connection, TemporaryNodesResult } from '../models/crm.models';
+import { CrmNode, Connection } from '../models/crm.models';
 import { TemporaryNodeStrategyFactory } from '../strategies/temporary-node-strategies';
+import { FlowStateService } from './flow-state.service';
 
 /**
  * Service dédié à la gestion des nœuds temporaires
@@ -12,48 +13,30 @@ import { TemporaryNodeStrategyFactory } from '../strategies/temporary-node-strat
 })
 export class TemporaryNodeService {
   /**
-   * Nœuds temporaires du diagramme
+   * Service d'état du flow
    * @private
    */
-  private readonly _temporaryNodes = signal<CrmNode[]>([]);
-  
-  /**
-   * Connexions temporaires du diagramme
-   * @private
-   */
-  private readonly _temporaryConnections = signal<Connection[]>([]);
-  
-  /**
-   * Type d'élément en cours de glisser-déposer
-   * @private
-   */
-  private readonly _draggingItemType = signal<string | null>(null);
-  
-  /**
-   * Indique si un nœud est en cours de création
-   * @private
-   */
-  private readonly _isCreatingNode = signal<boolean>(false);
+  private readonly flowStateService = inject(FlowStateService);
 
   /**
    * Observable des nœuds temporaires
    */
-  readonly temporaryNodes$ = toObservable(this._temporaryNodes);
+  readonly temporaryNodes$ = toObservable(this.flowStateService.temporaryNodes);
   
   /**
    * Observable des connexions temporaires
    */
-  readonly temporaryConnections$ = toObservable(this._temporaryConnections);
+  readonly temporaryConnections$ = toObservable(this.flowStateService.temporaryConnections);
   
   /**
    * Observable du type d'élément en cours de glisser-déposer
    */
-  readonly draggingItemType$ = toObservable(this._draggingItemType);
+  readonly draggingItemType$ = toObservable(this.flowStateService.draggingItemType);
   
   /**
    * Observable indiquant si un nœud est en cours de création
    */
-  readonly isCreatingNode$ = toObservable(this._isCreatingNode);
+  readonly isCreatingNode$ = toObservable(this.flowStateService.isCreatingNode);
 
   /**
    * Fonction de vérification si une position est libre
@@ -105,42 +88,42 @@ export class TemporaryNodeService {
    * @returns Les nœuds temporaires actuels
    */
   get temporaryNodes(): CrmNode[] {
-    return this._temporaryNodes();
+    return this.flowStateService.temporaryNodes();
   }
 
   /**
    * @returns Les connexions temporaires actuelles
    */
   get temporaryConnections(): Connection[] {
-    return this._temporaryConnections();
+    return this.flowStateService.temporaryConnections();
   }
 
   /**
    * @returns Le type d'élément en cours de glisser-déposer
    */
   get draggingItemType(): string | null {
-    return this._draggingItemType();
+    return this.flowStateService.draggingItemType();
   }
 
   /**
    * @param value Le type d'élément en cours de glisser-déposer
    */
   set draggingItemType(value: string | null) {
-    this._draggingItemType.set(value);
+    this.flowStateService.updateDraggingItemType(value);
   }
 
   /**
    * @returns Si un nœud est en cours de création
    */
   get isCreatingNode(): boolean {
-    return this._isCreatingNode();
+    return this.flowStateService.isCreatingNode();
   }
 
   /**
    * @param value Si un nœud est en cours de création
    */
   set isCreatingNode(value: boolean) {
-    this._isCreatingNode.set(value);
+    this.flowStateService.updateIsCreatingNode(value);
   }
 
   /**
@@ -176,8 +159,7 @@ export class TemporaryNodeService {
    */
   clearTemporaryElements(): void {
     // Effacer les nœuds et connexions temporaires
-    this._temporaryNodes.set([]);
-    this._temporaryConnections.set([]);
+    this.flowStateService.clearTemporaryElements();
   }
 
   /**
@@ -275,8 +257,8 @@ export class TemporaryNodeService {
     console.log(`Created ${allTempNodes.length} temporary nodes and ${allTempConnections.length} connections`);
     
     // Mettre à jour les signaux avec les nouveaux nœuds et connexions temporaires
-    this._temporaryNodes.set(allTempNodes);
-    this._temporaryConnections.set(allTempConnections);
+    this.flowStateService.updateTemporaryNodes(allTempNodes);
+    this.flowStateService.updateTemporaryConnections(allTempConnections);
   }
 
   /**
@@ -298,8 +280,8 @@ export class TemporaryNodeService {
     console.log('Created central temporary node:', centralTempNode);
     
     // Mettre à jour les signaux
-    this._temporaryNodes.set([centralTempNode]);
-    this._temporaryConnections.set([]);
+    this.flowStateService.updateTemporaryNodes([centralTempNode]);
+    this.flowStateService.updateTemporaryConnections([]);
   }
 
   /**

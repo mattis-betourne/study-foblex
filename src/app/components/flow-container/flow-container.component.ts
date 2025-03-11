@@ -91,6 +91,15 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
         // Forcer la détection de changements après chaque mise à jour des nœuds
         this.changeDetectorRef.detectChanges();
       });
+    
+    // S'abonner également aux changements de connexions pour la même raison
+    this.flowService.connections$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(connections => {
+        console.log('Connections updated:', connections);
+        // Forcer la détection de changements après chaque mise à jour des connexions
+        this.changeDetectorRef.detectChanges();
+      });
   }
   
   /**
@@ -101,12 +110,8 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     console.log('Flow component:', this.flow);
     console.log('Zoom directive:', this.zoomDirective);
     
-    // Utiliser queueMicrotask au lieu de setTimeout pour respecter le cycle de détection Angular
     queueMicrotask(() => {
       if (this.canvas) {
-        // Passer la référence au canvas au service
-        // this.flowService.setCanvasRef(this.canvas);
-        
         // Passer la référence à la directive de zoom au service dédié
         if (this.zoomDirective) {
           console.log('Zoom directive:', this.zoomDirective);
@@ -278,7 +283,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
         // Vérifier que ce n'est pas un nœud déjà dans notre liste
         const nodeId = nodeEl.getAttribute('data-fnode');
         // Si ce nœud n'est pas dans notre liste et n'est pas un nœud temporaire, le supprimer
-        if (nodeId && !this.flowService.nodes.some(n => n.id === nodeId) && 
+        if (nodeId && !this.flowService.nodes().some((n: CrmNode) => n.id === nodeId) && 
             !nodeEl.classList.contains('temporary-node')) {
           try {
             nodeEl.remove();
@@ -295,7 +300,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       this.changeDetectorRef.detectChanges();
       
       // Terminer le drag sans créer de nœud
-      this.flowService.endDrag(this.changeDetectorRef);
+      this.resetDragState();
     }, 0);
   }
   
@@ -435,7 +440,21 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    * Gestionnaire pour terminer le drag
    */
   onDragEnd(): void {
-    this.flowService.endDrag(this.changeDetectorRef);
+    this.resetDragState();
+  }
+  
+  /**
+   * Réinitialise l'état de drag
+   * @private
+   */
+  private resetDragState(): void {
+    // Réinitialiser les états
+    this.flowService.draggingItemType = null;
+    this.flowService.isCreatingNode = false;
+    this.flowService.clearTemporaryElements();
+    
+    // Forcer la détection de changements
+    this.changeDetectorRef.detectChanges();
   }
   
   /**
@@ -487,8 +506,8 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       // Récupérer les nœuds concernés pour des messages plus détaillés
       const sourceId = event.outputId.replace('output_', '');
       const targetId = event.inputId.replace('input_', '');
-      const sourceNode = this.flowService.nodes.find(node => node.id === sourceId);
-      const targetNode = this.flowService.nodes.find(node => node.id === targetId);
+      const sourceNode = this.flowService.nodes().find((node: CrmNode) => node.id === sourceId);
+      const targetNode = this.flowService.nodes().find((node: CrmNode) => node.id === targetId);
       
       if (sourceNode && targetNode) {
         this.showConnectionLimitMessage(
@@ -539,14 +558,14 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   getBinarySplitBranchType(connection: Connection): 'top' | 'bottom' | undefined {
     // Vérifier d'abord si la connexion provient d'un BinarySplit
     const sourceId = connection.sourceId.replace('output_', '');
-    const sourceNode = this.flowService.nodes.find(node => node.id === sourceId);
+    const sourceNode = this.flowService.nodes().find((node: CrmNode) => node.id === sourceId);
     if (!sourceNode || sourceNode.type !== 'BinarySplit') {
       return undefined;
     }
     
     // Trouver toutes les connexions sortantes du même BinarySplit
-    const binarySplitConnections = this.flowService.connections.filter(
-      conn => conn.sourceId === connection.sourceId
+    const binarySplitConnections = this.flowService.connections().filter(
+      (conn: Connection) => conn.sourceId === connection.sourceId
     );
     
     // Si moins de 2 connexions, nous ne pouvons pas déterminer
@@ -556,9 +575,9 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     }
     
     // Trouver les nœuds cibles pour chaque connexion
-    const targetNodes = binarySplitConnections.map(conn => {
+    const targetNodes = binarySplitConnections.map((conn: Connection) => {
       const targetId = conn.targetId.replace('input_', '');
-      return this.flowService.nodes.find(node => node.id === targetId);
+      return this.flowService.nodes().find((node: CrmNode) => node.id === targetId);
     }).filter(Boolean) as CrmNode[];
     
     // Trier les nœuds cibles par position Y
@@ -566,7 +585,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     
     // Déterminer le nœud cible actuel
     const currentTargetId = connection.targetId.replace('input_', '');
-    const currentTarget = this.flowService.nodes.find(node => node.id === currentTargetId);
+    const currentTarget = this.flowService.nodes().find((node: CrmNode) => node.id === currentTargetId);
     
     // Si le nœud cible actuel est le premier dans la liste triée (le plus haut), c'est 'top'
     if (currentTarget && targetNodes[0] && currentTarget.id === targetNodes[0].id) {
@@ -585,20 +604,20 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   getMultiSplitBranchNumber(connection: Connection): number | undefined {
     // Vérifier d'abord si la connexion provient d'un MultiSplit
     const sourceId = connection.sourceId.replace('output_', '');
-    const sourceNode = this.flowService.nodes.find(node => node.id === sourceId);
+    const sourceNode = this.flowService.nodes().find((node: CrmNode) => node.id === sourceId);
     if (!sourceNode || sourceNode.type !== 'MultiSplit') {
       return undefined;
     }
     
     // Trouver toutes les connexions sortantes du même MultiSplit
-    const multiSplitConnections = this.flowService.connections.filter(
-      conn => conn.sourceId === connection.sourceId
+    const multiSplitConnections = this.flowService.connections().filter(
+      (conn: Connection) => conn.sourceId === connection.sourceId
     );
     
     // Trouver les nœuds cibles pour chaque connexion
-    const targetNodes = multiSplitConnections.map(conn => {
+    const targetNodes = multiSplitConnections.map((conn: Connection) => {
       const targetId = conn.targetId.replace('input_', '');
-      return this.flowService.nodes.find(node => node.id === targetId);
+      return this.flowService.nodes().find((node: CrmNode) => node.id === targetId);
     }).filter(Boolean) as CrmNode[];
     
     // Trier les nœuds cibles par position Y (verticalement du haut vers le bas)
@@ -606,7 +625,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     
     // Déterminer le nœud cible actuel
     const currentTargetId = connection.targetId.replace('input_', '');
-    const currentTarget = this.flowService.nodes.find(node => node.id === currentTargetId);
+    const currentTarget = this.flowService.nodes().find((node: CrmNode) => node.id === currentTargetId);
     
     if (!currentTarget) return undefined;
     

@@ -1,23 +1,7 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { CrmNode, Connection } from '../models/crm.models';
-
-/**
- * Interface représentant l'état du flow pour l'historique
- */
-export interface FlowState {
-  nodes: CrmNode[];
-  connections: Connection[];
-}
-
-/**
- * Interface pour le service capable de mettre à jour le flow
- */
-export interface FlowStateUpdater {
-  setNodes(nodes: CrmNode[]): void;
-  setConnections(connections: Connection[]): void;
-  clearTemporaryElements(): void;
-}
+import { FlowState, FlowStateService } from './flow-state.service';
 
 /**
  * Service de gestion de l'historique des actions du flow
@@ -46,10 +30,10 @@ export class HistoryService {
   private readonly maxHistorySize = 50;
 
   /**
-   * État actuel du flow
+   * Service d'état du flow
    * @private
    */
-  private readonly _currentState = signal<FlowState | null>(null);
+  private readonly flowStateService = inject(FlowStateService);
 
   /**
    * Signal calculé indiquant si l'annulation est possible
@@ -75,107 +59,70 @@ export class HistoryService {
    */
   readonly canRedo$ = toObservable(this.canRedo);
 
-  /**
-   * Observable de l'état actuel du flow
-   */
-  readonly currentState$ = toObservable(this._currentState);
-
-  /**
-   * Référence au service qui met à jour l'état du flow
-   * @private
-   */
-  private flowUpdater: FlowStateUpdater | null = null;
-
   constructor() {}
 
   /**
-   * Définit l'état actuel et met à jour les abonnés
-   * @param state Nouvel état du flow
+   * Sauvegarde l'état actuel du flow dans l'historique
    */
-  setCurrentState(state: FlowState): void {
-    const stateCopy = this.deepCopyState(state);
-    this._currentState.set(stateCopy);
-  }
+  saveState(): void {
+    // Récupérer l'état actuel depuis le service d'état
+    const currentState = this.flowStateService.state();
+    
+    // Créer une copie profonde
+    const stateCopy = this.deepCopyState(currentState);
 
-  /**
-   * Obtient l'état actuel du flow
-   */
-  getCurrentState(): FlowState | null {
-    return this._currentState();
-  }
-
-  /**
-   * Ajoute un nouvel état à l'historique
-   * @param state État à sauvegarder
-   * @returns État sauvegardé (copie profonde)
-   */
-  pushState(state: FlowState): FlowState {
     // Tronquer l'historique si nous sommes au milieu
     if (this._currentIndex() < this._history().length - 1) {
       this._history.update(history => history.slice(0, this._currentIndex() + 1));
     }
 
-    // Créer une copie profonde de l'état
-    const stateCopy = this.deepCopyState(state);
-
     // Ajouter le nouvel état et mettre à jour l'index
     this._history.update(history => [...history, stateCopy]);
     this._currentIndex.update(index => index + 1);
-
-    // Mettre à jour l'état courant
-    this._currentState.set(stateCopy);
 
     // Limiter la taille de l'historique
     if (this._history().length > this.maxHistorySize) {
       this._history.update(history => history.slice(1));
       this._currentIndex.update(index => index - 1);
     }
-
-    return stateCopy;
   }
 
   /**
-   * Annule la dernière action et retourne l'état précédent
-   * @returns État précédent ou null si impossible
+   * Annule la dernière action
    */
-  undo(): FlowState | null {
+  undo(): void {
     if (!this.canUndo()) {
       console.log('Cannot undo: no previous state available');
-      return null;
+      return;
     }
 
     // Décrémente l'index courant
     this._currentIndex.update(index => index - 1);
     
     // Récupérer l'état précédent
-    const previousState = this.deepCopyState(this._history()[this._currentIndex()]);
+    const previousState = this._history()[this._currentIndex()];
     
-    // Mettre à jour l'état courant
-    this._currentState.set(previousState);
-    
-    return previousState;
+    // Mettre à jour l'état dans le service
+    this.flowStateService.updateState(previousState);
   }
 
   /**
-   * Rétablit l'action annulée et retourne l'état suivant
-   * @returns État suivant ou null si impossible
+   * Rétablit l'action annulée
    */
-  redo(): FlowState | null {
+  redo(): void {
     if (!this.canRedo()) {
       console.log('Cannot redo: no next state available');
-      return null;
+      return;
     }
 
     // Incrémente l'index courant
     this._currentIndex.update(index => index + 1);
     
     // Récupérer l'état suivant
-    const nextState = this.deepCopyState(this._history()[this._currentIndex()]);
+    const nextState = this._history()[this._currentIndex()];
     
-    // Mettre à jour l'état courant
-    this._currentState.set(nextState);
-    
-    return nextState;
+    // Mettre à jour l'état dans le service
+    this.flowStateService.updateState(nextState);
   }
 
   /**
@@ -184,7 +131,6 @@ export class HistoryService {
   clear(): void {
     this._history.set([]);
     this._currentIndex.set(-1);
-    this._currentState.set(null);
   }
 
   /**
@@ -195,61 +141,10 @@ export class HistoryService {
    */
   private deepCopyState(state: FlowState): FlowState {
     return {
-      nodes: JSON.parse(JSON.stringify(state.nodes)),
-      connections: JSON.parse(JSON.stringify(state.connections))
+      nodes: structuredClone(state.nodes),
+      connections: structuredClone(state.connections),
+      zoom: structuredClone(state.zoom),
+      temporaryElements: structuredClone(state.temporaryElements)
     };
-  }
-
-  /**
-   * Enregistre un service capable de mettre à jour l'état du flow
-   * @param updater Service implémentant l'interface FlowStateUpdater
-   */
-  registerFlowUpdater(updater: FlowStateUpdater): void {
-    this.flowUpdater = updater;
-  }
-
-  /**
-   * Sauvegarde directement l'état du flow
-   * @param nodes Nœuds du flow
-   * @param connections Connexions du flow
-   */
-  saveFlowState(nodes: CrmNode[], connections: Connection[]): void {
-    const state: FlowState = {
-      nodes,
-      connections
-    };
-    this.pushState(state);
-  }
-
-  /**
-   * Annule la dernière action et met à jour le flow
-   * @returns État précédent ou null si impossible
-   */
-  undoAndUpdateFlow(): FlowState | null {
-    const previousState = this.undo();
-    
-    if (previousState && this.flowUpdater) {
-      this.flowUpdater.setNodes(previousState.nodes);
-      this.flowUpdater.setConnections(previousState.connections);
-      this.flowUpdater.clearTemporaryElements();
-    }
-    
-    return previousState;
-  }
-
-  /**
-   * Rétablit l'action annulée et met à jour le flow
-   * @returns État suivant ou null si impossible
-   */
-  redoAndUpdateFlow(): FlowState | null {
-    const nextState = this.redo();
-    
-    if (nextState && this.flowUpdater) {
-      this.flowUpdater.setNodes(nextState.nodes);
-      this.flowUpdater.setConnections(nextState.connections);
-      this.flowUpdater.clearTemporaryElements();
-    }
-    
-    return nextState;
   }
 } 
