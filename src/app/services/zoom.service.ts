@@ -1,5 +1,6 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
+import { FlowStateService } from './flow-state.service';
 
 /**
  * Service dédié à la gestion des opérations de zoom
@@ -16,10 +17,10 @@ export class ZoomService {
   private readonly _zoomDirective = signal<any>(null);
 
   /**
-   * Niveau de zoom actuel
+   * Service d'état du flow
    * @private
    */
-  private readonly _zoomLevel = signal<number>(1);
+  private readonly flowStateService = inject(FlowStateService);
 
   /**
    * Minimum zoom level
@@ -36,17 +37,17 @@ export class ZoomService {
   /**
    * Observable du niveau de zoom
    */
-  readonly zoomLevel$ = toObservable(this._zoomLevel);
+  readonly zoomLevel$ = toObservable(this.flowStateService.zoomLevel);
 
   /**
    * Valeur calculée indiquant si le zoom peut être augmenté
    */
-  readonly canZoomIn = computed(() => this._zoomLevel() < this._maxZoom);
+  readonly canZoomIn = computed(() => this.flowStateService.zoomLevel() < this._maxZoom);
 
   /**
    * Valeur calculée indiquant si le zoom peut être diminué
    */
-  readonly canZoomOut = computed(() => this._zoomLevel() > this._minZoom);
+  readonly canZoomOut = computed(() => this.flowStateService.zoomLevel() > this._minZoom);
 
   /**
    * Observable indiquant si le zoom peut être augmenté
@@ -71,7 +72,7 @@ export class ZoomService {
     try {
       if (zoomDirective) {
         const currentZoom = zoomDirective.getZoomValue();
-        this._zoomLevel.set(currentZoom);
+        this.flowStateService.updateZoom(currentZoom);
       }
     } catch (error) {
       console.error('Error getting initial zoom value:', error);
@@ -89,7 +90,7 @@ export class ZoomService {
    * Retourne le niveau de zoom actuel
    */
   get zoomLevel(): number {
-    return this._zoomLevel();
+    return this.flowStateService.zoomLevel();
   }
 
   /**
@@ -107,7 +108,7 @@ export class ZoomService {
     // Mettre à jour le niveau de zoom
     try {
       const currentZoom = this._zoomDirective().getZoomValue();
-      this._zoomLevel.set(currentZoom);
+      this.flowStateService.updateZoom(currentZoom, point);
     } catch (error) {
       console.error('Error updating zoom level:', error);
     }
@@ -128,7 +129,7 @@ export class ZoomService {
     // Mettre à jour le niveau de zoom
     try {
       const currentZoom = this._zoomDirective().getZoomValue();
-      this._zoomLevel.set(currentZoom);
+      this.flowStateService.updateZoom(currentZoom, point);
     } catch (error) {
       console.error('Error updating zoom level:', error);
     }
@@ -148,7 +149,7 @@ export class ZoomService {
     // Réinitialiser le niveau de zoom
     try {
       const currentZoom = this._zoomDirective().getZoomValue();
-      this._zoomLevel.set(currentZoom);
+      this.flowStateService.updateZoom(currentZoom);
     } catch (error) {
       console.error('Error resetting zoom level:', error);
     }

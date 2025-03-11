@@ -5,7 +5,7 @@
   <!-- Débogage: Afficher le nombre de nœuds -->
   @if (false) {
     <div class="absolute top-0 right-0 bg-white p-2 text-xs z-50">
-      Nodes: {{ flowService.nodes.length }}
+      Nodes: {{ flowService.nodes().length }}
     </div>
   }
   
@@ -16,7 +16,7 @@
     <f-connection-for-create fBehavior="floating"></f-connection-for-create>
     <f-canvas #canvas fZoom>
       <!-- Les nœuds permanents -->
-      @for (node of flowService.nodes; track node.id) {
+      @for (node of flowService.nodes(); track node.id) {
         <div fNode 
              [fNodePosition]="node.position || {x: 0, y: 0}" 
              fNodeOutput 
@@ -38,7 +38,7 @@
       }
       
       <!-- Les nœuds temporaires (emplacements potentiels) -->
-      @for (node of flowService.temporaryNodes; track node.id) {
+      @for (node of flowService.temporaryNodes(); track node.id) {
         <div fNode 
              [fNodePosition]="node.position || {x: 0, y: 0}" 
              fNodeOutput 
@@ -60,17 +60,11 @@
             </div>
             <span class="font-medium text-gray-400">{{ node.type }}</span>
           </div>
-          <!-- <div class="min-h-[48px] p-3 border-t border-gray-200 flex items-center justify-center text-gray-400 text-sm">
-            <div class="flex items-center">
-              <span class="inline-block w-2 h-2 bg-green-400 rounded-full mr-1 animate-pulse"></span>
-              <span>Drop here to connect</span>
-            </div>
-          </div> -->
         </div>
       }
       
       <!-- Connexions entre les nœuds permanents -->
-      @for (connection of flowService.connections; track connection.id) {
+      @for (connection of flowService.connections(); track connection.id) {
         <f-connection 
           [fOutputId]="connection.sourceId" 
           [fInputId]="connection.targetId"
@@ -79,7 +73,7 @@
       }
       
       <!-- Connexions temporaires -->
-      @for (connection of flowService.temporaryConnections; track connection.id) {
+      @for (connection of flowService.temporaryConnections(); track connection.id) {
         <f-connection 
           [fOutputId]="connection.sourceId" 
           [fInputId]="connection.targetId"

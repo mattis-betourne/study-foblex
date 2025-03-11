@@ -1,9 +1,9 @@
-import { Component, ChangeDetectionStrategy, inject, signal, computed, DestroyRef } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, signal, computed, DestroyRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { SafeHtmlPipe } from '../../pipes/safe-html.pipe';
 import { FlowService } from '../../services/flow.service';
-import { HistoryService, FlowState } from '../../services/history.service';
+import { HistoryService } from '../../services/history.service';
 import { ZoomService } from '../../services/zoom.service';
 
 /**
@@ -41,6 +41,7 @@ export class FlowToolbarComponent {
   /** Services injectés */
   private readonly historyService = inject(HistoryService);
   private readonly zoomService = inject(ZoomService);
+  private readonly flowService = inject(FlowService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Actions disponibles dans la toolbar */
@@ -181,7 +182,7 @@ export class FlowToolbarComponent {
   undo(): void {
     if (this.canUndo()) {
       console.log('Executing undo action');
-      this.historyService.undoAndUpdateFlow();
+      this.flowService.undo();
     } else {
       console.log('Undo action not available');
     }
@@ -193,7 +194,7 @@ export class FlowToolbarComponent {
   redo(): void {
     if (this.canRedo()) {
       console.log('Executing redo action');
-      this.historyService.redoAndUpdateFlow();
+      this.flowService.redo();
     } else {
       console.log('Redo action not available');
     }
