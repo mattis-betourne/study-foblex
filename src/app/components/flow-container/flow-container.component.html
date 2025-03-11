@@ -2,21 +2,25 @@
      (pointerup)="onCanvasPointerUp($event)" 
      (dragover)="onDragOver($event)" 
      (drop)="onDrop($event)">
-  <f-flow #canvas fDraggable 
+  <!-- Débogage: Afficher le nombre de nœuds -->
+  <div class="absolute top-0 right-0 bg-white p-2 text-xs z-50" *ngIf="false">
+    Nodes: {{ flowService.nodes.length }}
+  </div>
+  
+  <f-flow #flow fDraggable
           [attr.data-dragging]="flowService.draggingItemType ? 'true' : 'false'"
           (fCreateNode)="onCreateNode($event)">
-    <f-canvas>
+    <f-canvas #canvas fZoom>
       <!-- Les nœuds permanents -->
       @for (node of flowService.nodes; track node.id) {
         <div fNode 
-             fDragHandle 
-             [fNodePosition]="node.position" 
+             [fNodePosition]="node.position || {x: 0, y: 0}" 
              fNodeOutput 
              [fOutputId]="'output_' + node.id" 
              fOutputConnectableSide="right"
              fNodeInput
              [fInputId]="'input_' + node.id"
-             fInputConnectableSide="left"
+             fInputConnectableSide="right"
              [ngClass]="flowService.getNodeClass(node.type)">
           <div class="p-3 flex items-center font-medium text-white">
             <span class="mr-2 text-xl">{{ flowService.getNodeIcon(node.type) }}</span>
@@ -31,13 +35,13 @@
       <!-- Les nœuds temporaires (emplacements potentiels) -->
       @for (node of flowService.temporaryNodes; track node.id) {
         <div fNode 
-             [fNodePosition]="node.position" 
+             [fNodePosition]="node.position || {x: 0, y: 0}" 
              fNodeOutput 
              [fOutputId]="'output_' + node.id" 
              fOutputConnectableSide="right"
              fNodeInput
              [fInputId]="'input_' + node.id"
-             fInputConnectableSide="left"
+             fInputConnectableSide="right"
              class="min-w-[180px] rounded-md shadow-md overflow-hidden bg-gradient-to-r from-green-50 to-green-100 opacity-90 border-2 border-dashed border-green-500 cursor-pointer temporary-node hover:scale-105 hover:shadow-lg transition-all"
              [attr.data-node-id]="node.id"
              appTemporaryNode
@@ -78,7 +82,8 @@
     <!-- Ajout d'un fond quadrillé -->
     <f-background></f-background>
     
-    <!-- Ajout de la fonctionnalité de zoom -->
-    <div fZoom></div>
   </f-flow>
+  
+  <!-- Toolbar flottante -->
+  <app-flow-toolbar></app-flow-toolbar>
 </div> 

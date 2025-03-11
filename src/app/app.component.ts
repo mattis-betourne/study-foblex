@@ -12,7 +12,6 @@ import { FlowService } from './services/flow.service';
   selector: 'app-root',
   standalone: true,
   imports: [
-    RouterOutlet,
     CommonModule, 
     BuilderComponent,
     FlowContainerComponent

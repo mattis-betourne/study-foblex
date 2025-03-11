@@ -1,8 +1,9 @@
-import { Component, ViewChild, AfterViewInit, ChangeDetectorRef, HostListener, ElementRef, OnInit, OnDestroy } from '@angular/core';
+import { Component, ViewChild, AfterViewInit, ChangeDetectorRef, HostListener, ElementRef, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FFlowModule, FCanvasComponent } from '@foblex/flow';
+import { FFlowModule, FCanvasComponent, FZoomDirective } from '@foblex/flow';
 import { FlowService } from '../../services/flow.service';
 import { TemporaryNodeDirective } from '../../directives/temporary-node.directive';
+import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
 import { Subscription } from 'rxjs';
 
 /**
@@ -14,27 +15,45 @@ import { Subscription } from 'rxjs';
   imports: [
     CommonModule,
     FFlowModule,
-    TemporaryNodeDirective
+    TemporaryNodeDirective,
+    FlowToolbarComponent
   ],
   templateUrl: './flow-container.component.html',
   styleUrls: ['./flow-container.component.css']
 })
 export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Référence au composant canvas de Foblex Flow */
-  @ViewChild(FCanvasComponent) canvas!: FCanvasComponent;
+  @ViewChild('canvas') canvas!: FCanvasComponent;
+  
+  /** Référence au composant flow de Foblex Flow */
+  @ViewChild('flow') flow!: FCanvasComponent;
+  
+  /** Référence à la directive de zoom */
+  @ViewChild(FZoomDirective) zoomDirective!: FZoomDirective;
   
   /** Souscription aux changements de draggingItemType */
   private draggingTypeSubscription!: Subscription;
+  private nodesSubscription!: Subscription;
   
-  constructor(
-    public flowService: FlowService,
-    private changeDetectorRef: ChangeDetectorRef
-  ) {}
+  /** Services injectés */
+  public flowService = inject(FlowService);
+  private changeDetectorRef = inject(ChangeDetectorRef);
+  
+  constructor() {
+    console.log('FlowContainer constructor - Initializing default nodes');
+    // Initialiser les nœuds par défaut dans le constructeur
+    this.flowService.addDefaultNode();
+  }
   
   /**
-   * Initialisation des souscriptions
+   * Initialisation des souscriptions et des données
    */
   ngOnInit(): void {
+    console.log('FlowContainer ngOnInit - Starting initialization');
+    
+    // Vérifier que les nœuds ont été créés
+    console.log('Nodes after initialization:', this.flowService.nodes);
+    
     // S'abonner aux changements de draggingItemType
     this.draggingTypeSubscription = this.flowService.draggingItemType$.subscribe(itemType => {
       console.log('FlowContainer detected draggingItemType change:', itemType);
@@ -47,6 +66,13 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
         }, 50);
       }
     });
+    
+    // S'abonner aux changements de nœuds pour le débogage
+    this.nodesSubscription = this.flowService.nodes$.subscribe(nodes => {
+      console.log('Nodes updated:', nodes);
+      // Forcer la détection de changements après chaque mise à jour des nœuds
+      this.changeDetectorRef.detectChanges();
+    });
   }
   
   /**
@@ -57,6 +83,9 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
     if (this.draggingTypeSubscription) {
       this.draggingTypeSubscription.unsubscribe();
     }
+    if (this.nodesSubscription) {
+      this.nodesSubscription.unsubscribe();
+    }
   }
   
   /**
@@ -64,16 +93,41 @@ export class FlowContainerComponent implements OnInit, AfterViewInit, OnDestroy 
    */
   ngAfterViewInit(): void {
     console.log('Canvas component:', this.canvas);
+    console.log('Flow component:', this.flow);
+    console.log('Zoom directive:', this.zoomDirective);
     
-    // Ajouter des nœuds par défaut
-    this.flowService.addDefaultNode();
-    
-    // Réinitialiser l'échelle et centrer le canvas
+    // Utiliser setTimeout pour s'assurer que les modifications sont effectuées après le cycle de détection de changement
     setTimeout(() => {
       if (this.canvas) {
+        // Passer la référence au canvas au service
+        this.flowService.setCanvasRef(this.canvas);
+        
+        // Passer la référence à la directive de zoom au service
+        if (this.zoomDirective) {
+          this.flowService.setZoomDirective(this.zoomDirective);
+          
+          // Vérifier que la directive de zoom est bien initialisée
+          try {
+            const zoomValue = this.zoomDirective.getZoomValue();
+            console.log('Initial zoom value:', zoomValue);
+          } catch (error) {
+            console.error('Error getting initial zoom value:', error);
+          }
+        } else {
+          console.warn('Zoom directive not found');
+        }
+        
         this.canvas.resetScaleAndCenter(false);
+        
+        // Vérifier que le canvas est bien initialisé
+        try {
+          const scale = this.canvas.getScale();
+          console.log('Initial canvas scale:', scale);
+        } catch (error) {
+          console.error('Error getting initial canvas scale:', error);
+        }
       }
-    }, 100);
+    }, 0);
   }
   
   /**
