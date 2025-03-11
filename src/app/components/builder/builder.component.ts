@@ -79,6 +79,13 @@ export class BuilderComponent implements OnInit {
         { type: 'Task', icon: '✅', color: 'bg-red-500' },
         { type: 'Email', icon: '✉️', color: 'bg-purple-500' }
       ]
+    },
+    {
+      name: 'Flux',
+      expanded: true,
+      items: [
+        { type: 'BinarySplit', icon: '🔀', color: 'bg-indigo-600' }
+      ]
     }
   ];
   

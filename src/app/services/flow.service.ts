@@ -339,40 +339,106 @@ export class FlowService {
         conn => conn.targetId === `input_${existingNode.id}`
       );
 
-      const canAcceptMoreOutputs = existingNode.maxOutputs === undefined || 
-        existingOutputConnections.length < existingNode.maxOutputs;
+      // Règle spéciale pour BinarySplit : il doit avoir exactement 2 sorties
+      let canAcceptMoreOutputs = false;
+      if (existingNode.type === 'BinarySplit') {
+        // Pour un BinarySplit, autoriser l'ajout de connections si moins de 2 sorties
+        canAcceptMoreOutputs = existingOutputConnections.length < 2;
+      } else {
+        // Pour les autres types, vérifier la limite maxOutputs
+        canAcceptMoreOutputs = existingNode.maxOutputs === undefined || 
+          existingOutputConnections.length < existingNode.maxOutputs;
+      }
         
       const canAcceptMoreInputs = existingNode.maxInputs === undefined || 
         existingInputConnections.length < existingNode.maxInputs;
       
-      // Vérifier si le nœud du type dragué peut avoir des sorties
+      // Vérifier si le nœud du type dragué peut avoir des entrées
       const newNodeCanHaveInputs = this.getDefaultMaxInputs(itemType) > 0;
       
       // Créer un nœud temporaire à droite du nœud existant (si le nœud existant peut avoir plus de sorties)
       if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
-        const rightTempNode: CrmNode = {
-          id: `temp_right_${generateGuid()}`,
-          type: itemType,
-          text: `${itemType} (Drop here to connect)`,
-          position: { 
-            x: existingNode.position.x + 250, 
-            y: existingNode.position.y 
-          },
-          maxInputs: this.getDefaultMaxInputs(itemType),
-          maxOutputs: this.getDefaultMaxOutputs(itemType)
-        };
-        
-        // Vérifier que les positions ne se superposent pas avec des nœuds existants
-        if (this.isPositionFree(rightTempNode.position)) {
-          tempNodes.push(rightTempNode);
+        // Pour les BinarySplit, créer des nœuds temporaires distincts pour chaque sortie requise
+        if (existingNode.type === 'BinarySplit') {
+          // Calculer des positions pour les deux sorties du BinarySplit
+          const positions = [
+            { // Position en haut à droite
+              x: existingNode.position.x + 250,
+              y: existingNode.position.y - 80
+            },
+            { // Position en bas à droite
+              x: existingNode.position.x + 250,
+              y: existingNode.position.y + 80
+            }
+          ];
           
-          // Créer une connexion temporaire pour le nœud à droite
-          const rightConnection: Connection = {
-            id: `temp_conn_${generateGuid()}`,
-            sourceId: `output_${existingNode.id}`,
-            targetId: `input_${rightTempNode.id}`
+          // Filtrer les positions déjà occupées par des connexions existantes
+          const usedPositionIndices = new Set<number>();
+          for (const conn of existingOutputConnections) {
+            // Trouver le nœud cible connecté
+            const targetNodeId = conn.targetId.replace('input_', '');
+            const targetNode = this._nodes().find(n => n.id === targetNodeId);
+            
+            if (targetNode) {
+              // Déterminer quelle position est occupée (approximativement)
+              if (Math.abs(targetNode.position.y - positions[0].y) < 
+                  Math.abs(targetNode.position.y - positions[1].y)) {
+                usedPositionIndices.add(0); // La position en haut est utilisée
+              } else {
+                usedPositionIndices.add(1); // La position en bas est utilisée
+              }
+            }
+          }
+          
+          // Créer des nœuds temporaires pour les positions disponibles
+          for (let i = 0; i < positions.length; i++) {
+            if (!usedPositionIndices.has(i) && this.isPositionFree(positions[i])) {
+              const binarySplitTempNode: CrmNode = {
+                id: `temp_binarysplit_${i}_${generateGuid()}`,
+                type: itemType,
+                text: `${itemType} (Branche ${i === 0 ? 'supérieure' : 'inférieure'})`,
+                position: positions[i],
+                maxInputs: this.getDefaultMaxInputs(itemType),
+                maxOutputs: this.getDefaultMaxOutputs(itemType)
+              };
+              
+              tempNodes.push(binarySplitTempNode);
+              
+              // Créer une connexion temporaire
+              const binarySplitConnection: Connection = {
+                id: `temp_conn_${generateGuid()}`,
+                sourceId: `output_${existingNode.id}`,
+                targetId: `input_${binarySplitTempNode.id}`
+              };
+              tempConnections.push(binarySplitConnection);
+            }
+          }
+        } else {
+          // Comportement normal pour les autres types de nœuds
+          const rightTempNode: CrmNode = {
+            id: `temp_right_${generateGuid()}`,
+            type: itemType,
+            text: `${itemType} (Drop here to connect)`,
+            position: { 
+              x: existingNode.position.x + 250, 
+              y: existingNode.position.y 
+            },
+            maxInputs: this.getDefaultMaxInputs(itemType),
+            maxOutputs: this.getDefaultMaxOutputs(itemType)
           };
-          tempConnections.push(rightConnection);
+          
+          // Vérifier que les positions ne se superposent pas avec des nœuds existants
+          if (this.isPositionFree(rightTempNode.position)) {
+            tempNodes.push(rightTempNode);
+            
+            // Créer une connexion temporaire pour le nœud à droite
+            const rightConnection: Connection = {
+              id: `temp_conn_${generateGuid()}`,
+              sourceId: `output_${existingNode.id}`,
+              targetId: `input_${rightTempNode.id}`
+            };
+            tempConnections.push(rightConnection);
+          }
         }
       }
       
@@ -542,6 +608,8 @@ export class FlowService {
         return '📧';
       case 'Meeting':
         return '🗓️';
+      case 'BinarySplit':
+        return '🔀';
       default:
         return '📄';
     }
@@ -571,6 +639,9 @@ export class FlowService {
         break;
       case 'Meeting':
         bgClass = 'bg-red-500';
+        break;
+      case 'BinarySplit':
+        bgClass = 'bg-indigo-600';
         break;
       default:
         bgClass = 'bg-gray-500';
@@ -635,6 +706,8 @@ export class FlowService {
         return 2;  // Un appel peut avoir jusqu'à 2 entrées
       case 'Note':
         return 1;  // Une note peut avoir une seule entrée
+      case 'BinarySplit':
+        return 1;  // Un séparateur binaire a exactement 1 entrée
       default:
         return 1;  // Par défaut, 1 entrée
     }
@@ -661,6 +734,8 @@ export class FlowService {
         return 1;  // Un appel peut avoir 1 sortie
       case 'Note':
         return 0;  // Une note ne peut pas avoir de sortie
+      case 'BinarySplit':
+        return 2;  // Un séparateur binaire a exactement 2 sorties
       default:
         return 1;  // Par défaut, 1 sortie
     }

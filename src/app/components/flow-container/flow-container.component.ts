@@ -487,7 +487,34 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       conn => conn.targetId === event.inputId
     );
     
-    // Vérifier les limites de connexions
+    // Validation spéciale pour le BinarySplit
+    if (sourceNode.type === 'BinarySplit') {
+      // Vérifier si nous avons déjà atteint exactement 2 sorties
+      if (existingOutputConnections.length >= 2) {
+        console.warn(`BinarySplit ne peut avoir que 2 sorties exactement`);
+        
+        this.showConnectionLimitMessage(
+          `Le nœud "BinarySplit" ne peut avoir que 2 sorties exactement`
+        );
+        
+        event.prevent();
+        return;
+      }
+    }
+    
+    // Validation spéciale pour la cible d'un BinarySplit
+    if (targetNode.type === 'BinarySplit' && existingInputConnections.length >= 1) {
+      console.warn(`BinarySplit ne peut avoir qu'une seule entrée`);
+      
+      this.showConnectionLimitMessage(
+        `Le nœud "BinarySplit" ne peut avoir qu'une seule entrée`
+      );
+      
+      event.prevent();
+      return;
+    }
+    
+    // Validation générale pour les limites maxOutputs
     if (sourceNode.maxOutputs !== undefined && 
         existingOutputConnections.length >= sourceNode.maxOutputs) {
       console.warn(`Max outputs (${sourceNode.maxOutputs}) reached for node ${outputNodeId}`);
@@ -501,6 +528,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       return;
     }
     
+    // Validation générale pour les limites maxInputs
     if (targetNode.maxInputs !== undefined && 
         existingInputConnections.length >= targetNode.maxInputs) {
       console.warn(`Max inputs (${targetNode.maxInputs}) reached for node ${inputNodeId}`);
@@ -544,5 +572,51 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
         messageElement.parentNode.removeChild(messageElement);
       }
     }, 3000);
+  }
+
+  /**
+   * Détermine si une connexion depuis un BinarySplit est une branche supérieure ou inférieure
+   * @param connection La connexion à vérifier
+   * @returns 'top' pour la branche supérieure, 'bottom' pour la branche inférieure, ou undefined
+   */
+  getBinarySplitBranchType(connection: Connection): 'top' | 'bottom' | undefined {
+    // Vérifier d'abord si la connexion provient d'un BinarySplit
+    const sourceId = connection.sourceId.replace('output_', '');
+    const sourceNode = this.flowService.nodes.find(node => node.id === sourceId);
+    if (!sourceNode || sourceNode.type !== 'BinarySplit') {
+      return undefined;
+    }
+    
+    // Trouver toutes les connexions sortantes du même BinarySplit
+    const binarySplitConnections = this.flowService.connections.filter(
+      conn => conn.sourceId === connection.sourceId
+    );
+    
+    // Si moins de 2 connexions, nous ne pouvons pas déterminer
+    if (binarySplitConnections.length < 2) {
+      // Pour 1 connexion, retourner 'top' par défaut
+      return 'top';
+    }
+    
+    // Trouver les nœuds cibles pour chaque connexion
+    const targetNodes = binarySplitConnections.map(conn => {
+      const targetId = conn.targetId.replace('input_', '');
+      return this.flowService.nodes.find(node => node.id === targetId);
+    }).filter(Boolean) as CrmNode[];
+    
+    // Trier les nœuds cibles par position Y
+    targetNodes.sort((a, b) => a.position.y - b.position.y);
+    
+    // Déterminer le nœud cible actuel
+    const currentTargetId = connection.targetId.replace('input_', '');
+    const currentTarget = this.flowService.nodes.find(node => node.id === currentTargetId);
+    
+    // Si le nœud cible actuel est le premier dans la liste triée (le plus haut), c'est 'top'
+    if (currentTarget && targetNodes[0] && currentTarget.id === targetNodes[0].id) {
+      return 'top';
+    }
+    
+    // Sinon, c'est 'bottom'
+    return 'bottom';
   }
 } 
