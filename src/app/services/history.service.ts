@@ -1,6 +1,4 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-import { CrmNode, Connection } from '../models/crm.models';
 import { FlowState, FlowStateService } from './flow-state.service';
 
 /**
@@ -48,16 +46,6 @@ export class HistoryService {
   readonly canRedo = computed(() => 
     this._currentIndex() < this._history().length - 1 && this._history().length > 0
   );
-
-  /**
-   * Observable indiquant si l'annulation est possible
-   */
-  readonly canUndo$ = toObservable(this.canUndo);
-  
-  /**
-   * Observable indiquant si le rétablissement est possible
-   */
-  readonly canRedo$ = toObservable(this.canRedo);
 
   constructor() {}
 
