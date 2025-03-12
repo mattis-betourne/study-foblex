@@ -1,10 +1,47 @@
-import { CrmNode, Connection, TemporaryNodesResult, TemporaryNodeStrategy } from '../models/crm.models';
-import { generateGuid } from '../utils/guid';
+import { CrmNode, Connection } from '../models/crm.models';
+import { FlowStateService } from '../services/flow-state.service';
+
+/**
+ * Interface améliorée pour les stratégies de création de nœuds temporaires
+ * qui utilise directement le service centralisé
+ */
+export interface CentralizedTemporaryNodeStrategy {
+  /**
+   * Vérifie si cette stratégie peut être appliquée pour ce nœud
+   * @param node Le nœud existant
+   * @param existingOutputConnections Les connexions de sortie existantes
+   * @param existingInputConnections Les connexions d'entrée existantes
+   * @param itemType Le type d'élément en cours de drag
+   */
+  canApply(
+    node: CrmNode, 
+    existingOutputConnections: Connection[], 
+    existingInputConnections: Connection[],
+    itemType: string
+  ): boolean;
+  
+  /**
+   * Crée des nœuds temporaires autour d'un nœud existant en utilisant le service centralisé
+   * @param node Le nœud existant
+   * @param existingOutputConnections Les connexions de sortie existantes
+   * @param existingInputConnections Les connexions d'entrée existantes
+   * @param itemType Le type d'élément en cours de drag
+   * @param flowStateService Service centralisé pour la gestion de l'état
+   * @returns Le nombre de nœuds temporaires créés
+   */
+  createTemporaryNodes(
+    node: CrmNode,
+    existingOutputConnections: Connection[],
+    existingInputConnections: Connection[],
+    itemType: string,
+    flowStateService: FlowStateService
+  ): number;
+}
 
 /**
  * Stratégie standard pour la création de nœuds temporaires
  */
-export class StandardNodeStrategy implements TemporaryNodeStrategy {
+export class StandardNodeStrategy implements CentralizedTemporaryNodeStrategy {
   canApply(
     node: CrmNode,
     existingOutputConnections: Connection[],
@@ -20,14 +57,9 @@ export class StandardNodeStrategy implements TemporaryNodeStrategy {
     existingOutputConnections: Connection[],
     existingInputConnections: Connection[],
     itemType: string,
-    isPositionFree: (position: {x: number, y: number}) => boolean,
-    getDefaultMaxInputs: (type: string) => number,
-    getDefaultMaxOutputs: (type: string) => number
-  ): TemporaryNodesResult {
-    const result: TemporaryNodesResult = {
-      nodes: [],
-      connections: []
-    };
+    flowStateService: FlowStateService
+  ): number {
+    let createdNodesCount = 0;
     
     // Vérifier si le nœud existant peut accepter plus de connexions
     const canAcceptMoreOutputs = node.maxOutputs === undefined || 
@@ -37,8 +69,8 @@ export class StandardNodeStrategy implements TemporaryNodeStrategy {
       existingInputConnections.length < node.maxInputs;
     
     // Obtenir les limites du type de nœud en cours de drag
-    const maxInputsForType = getDefaultMaxInputs(itemType);
-    const maxOutputsForType = getDefaultMaxOutputs(itemType);
+    const maxInputsForType = flowStateService.getDefaultMaxInputs(itemType);
+    const maxOutputsForType = flowStateService.getDefaultMaxOutputs(itemType);
     
     // Vérifier si le nœud du type dragué peut avoir des entrées
     const newNodeCanHaveInputs = maxInputsForType > 0;
@@ -55,31 +87,33 @@ export class StandardNodeStrategy implements TemporaryNodeStrategy {
     if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
       // Vérifier si le type de nœud existant et le type à créer sont compatibles
       // Par exemple, pour les types de communication qui ne peuvent avoir qu'1 entrée et 1 sortie
-      const existingTypeMaxOutputs = getDefaultMaxOutputs(node.type);
+      const existingTypeMaxOutputs = flowStateService.getDefaultMaxOutputs(node.type);
       if (existingTypeMaxOutputs > 0) {
-        const rightTempNode: CrmNode = {
-          id: `temp_right_${generateGuid()}`,
-          type: itemType,
-          text: `${itemType} (Drop here to connect)`,
-          position: { 
-            x: node.position.x + 250, 
-            y: node.position.y 
-          },
-          maxInputs: maxInputsForType,
-          maxOutputs: maxOutputsForType
+        const rightNodePosition = { 
+          x: node.position.x + 250, 
+          y: node.position.y 
         };
         
         // Vérifier que les positions ne se superposent pas
-        if (isPositionFree(rightTempNode.position)) {
-          result.nodes.push(rightTempNode);
+        if (flowStateService.isPositionFree(rightNodePosition)) {
+          // Créer le nœud temporaire via le service centralisé
+          const rightTempNode = flowStateService.createTemporaryNode({
+            id: `temp_right_${this.generateId()}`,
+            type: itemType,
+            text: `${itemType} (Drop here to connect)`,
+            position: rightNodePosition,
+            maxInputs: maxInputsForType,
+            maxOutputs: maxOutputsForType
+          });
           
-          // Créer une connexion temporaire
-          const rightConnection: Connection = {
-            id: `temp_conn_${generateGuid()}`,
+          // Créer une connexion temporaire via le service centralisé
+          flowStateService.createTemporaryConnection({
+            id: `temp_conn_${this.generateId()}`,
             sourceId: `output_${node.id}`,
             targetId: `input_${rightTempNode.id}`
-          };
-          result.connections.push(rightConnection);
+          });
+          
+          createdNodesCount++;
         }
       }
     }
@@ -90,43 +124,55 @@ export class StandardNodeStrategy implements TemporaryNodeStrategy {
     // Créer un nœud temporaire en dessous du nœud existant (nouveau nœud -> nœud existant)
     if (canAcceptMoreInputs && newNodeCanHaveOutputs) {
       // Vérifier si le type de nœud existant et le type à créer sont compatibles
-      const existingTypeMaxInputs = getDefaultMaxInputs(node.type);
+      const existingTypeMaxInputs = flowStateService.getDefaultMaxInputs(node.type);
       if (existingTypeMaxInputs > 0) {
-        const bottomTempNode: CrmNode = {
-          id: `temp_bottom_${generateGuid()}`,
-          type: itemType,
-          text: `${itemType} (Drop here to connect)`,
-          position: { 
-            x: node.position.x, 
-            y: node.position.y + 200
-          },
-          maxInputs: maxInputsForType,
-          maxOutputs: maxOutputsForType
+        const bottomNodePosition = { 
+          x: node.position.x, 
+          y: node.position.y + 200
         };
         
         // Vérifier que les positions ne se superposent pas
-        if (isPositionFree(bottomTempNode.position)) {
-          result.nodes.push(bottomTempNode);
+        if (flowStateService.isPositionFree(bottomNodePosition)) {
+          // Créer le nœud temporaire via le service centralisé
+          const bottomTempNode = flowStateService.createTemporaryNode({
+            id: `temp_bottom_${this.generateId()}`,
+            type: itemType,
+            text: `${itemType} (Drop here to connect)`,
+            position: bottomNodePosition,
+            maxInputs: maxInputsForType,
+            maxOutputs: maxOutputsForType
+          });
           
-          // Créer une connexion temporaire
-          const bottomConnection: Connection = {
-            id: `temp_conn_${generateGuid()}`,
+          // Créer une connexion temporaire via le service centralisé
+          flowStateService.createTemporaryConnection({
+            id: `temp_conn_${this.generateId()}`,
             sourceId: `output_${bottomTempNode.id}`,
             targetId: `input_${node.id}`
-          };
-          result.connections.push(bottomConnection);
+          });
+          
+          createdNodesCount++;
         }
       }
     }
     
-    return result;
+    return createdNodesCount;
+  }
+  
+  /**
+   * Génère un identifiant unique
+   * @returns L'identifiant généré
+   * @private
+   */
+  private generateId(): string {
+    return Math.random().toString(36).substring(2, 15) + 
+           Math.random().toString(36).substring(2, 15);
   }
 }
 
 /**
  * Stratégie pour la création de nœuds temporaires autour d'un BinarySplit
  */
-export class BinarySplitStrategy implements TemporaryNodeStrategy {
+export class BinarySplitStrategy implements CentralizedTemporaryNodeStrategy {
   constructor(private getAllNodes: () => CrmNode[]) {}
 
   canApply(
@@ -143,21 +189,16 @@ export class BinarySplitStrategy implements TemporaryNodeStrategy {
     existingOutputConnections: Connection[],
     existingInputConnections: Connection[],
     itemType: string,
-    isPositionFree: (position: {x: number, y: number}) => boolean,
-    getDefaultMaxInputs: (type: string) => number,
-    getDefaultMaxOutputs: (type: string) => number
-  ): TemporaryNodesResult {
-    const result: TemporaryNodesResult = {
-      nodes: [],
-      connections: []
-    };
+    flowStateService: FlowStateService
+  ): number {
+    let createdNodesCount = 0;
     
     // Pour un BinarySplit, autoriser l'ajout de connections si moins de 2 sorties
     const canAcceptMoreOutputs = existingOutputConnections.length < 2;
     const canAcceptMoreInputs = existingInputConnections.length < 1;
     
     // Vérifier si le nœud du type dragué peut avoir des entrées
-    const newNodeCanHaveInputs = getDefaultMaxInputs(itemType) > 0;
+    const newNodeCanHaveInputs = flowStateService.getDefaultMaxInputs(itemType) > 0;
     
     if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
       // Positions horizontales avec espacement vers le haut et le bas
@@ -195,72 +236,89 @@ export class BinarySplitStrategy implements TemporaryNodeStrategy {
       
       // Créer des nœuds temporaires pour les positions disponibles
       for (let i = 0; i < positions.length; i++) {
-        if (!usedPositionIndices.has(i) && isPositionFree(positions[i])) {
-          const binarySplitTempNode: CrmNode = {
-            id: `temp_binarysplit_${i}_${generateGuid()}`,
+        if (!usedPositionIndices.has(i) && flowStateService.isPositionFree(positions[i])) {
+          // Créer le nœud temporaire via le service centralisé
+          const binarySplitTempNode = flowStateService.createTemporaryNode({
+            id: `temp_binarysplit_${i}_${this.generateId()}`,
             type: itemType,
             text: `${itemType} (Branche ${i === 0 ? 'supérieure' : 'inférieure'})`,
             position: positions[i],
-            maxInputs: getDefaultMaxInputs(itemType),
-            maxOutputs: getDefaultMaxOutputs(itemType)
-          };
+            maxInputs: flowStateService.getDefaultMaxInputs(itemType),
+            maxOutputs: flowStateService.getDefaultMaxOutputs(itemType)
+          });
           
-          result.nodes.push(binarySplitTempNode);
-          
-          // Créer une connexion temporaire
-          const binarySplitConnection: Connection = {
-            id: `temp_conn_${generateGuid()}`,
+          // Créer une connexion temporaire via le service centralisé
+          flowStateService.createTemporaryConnection({
+            id: `temp_conn_${this.generateId()}`,
             sourceId: `output_${node.id}`,
             targetId: `input_${binarySplitTempNode.id}`
-          };
-          result.connections.push(binarySplitConnection);
+          });
+          
+          createdNodesCount++;
         }
       }
     }
     
     // Le reste de la logique standard pour l'entrée du BinarySplit
-    const newNodeCanHaveOutputs = getDefaultMaxOutputs(itemType) > 0;
+    const newNodeCanHaveOutputs = flowStateService.getDefaultMaxOutputs(itemType) > 0;
     
     if (canAcceptMoreInputs && newNodeCanHaveOutputs) {
-      const inputTempNode: CrmNode = {
-        id: `temp_bottom_${generateGuid()}`,
-        type: itemType,
-        text: `${itemType} (Connexion à l'entrée)`,
-        position: { 
-          x: node.position.x - 350,
-          y: node.position.y
-        },
-        maxInputs: getDefaultMaxInputs(itemType),
-        maxOutputs: getDefaultMaxOutputs(itemType)
+      const inputNodePosition = { 
+        x: node.position.x - 350,
+        y: node.position.y
       };
       
       // Vérifier que les positions ne se superposent pas
-      if (isPositionFree(inputTempNode.position)) {
-        result.nodes.push(inputTempNode);
+      if (flowStateService.isPositionFree(inputNodePosition)) {
+        // Créer le nœud temporaire via le service centralisé
+        const inputTempNode = flowStateService.createTemporaryNode({
+          id: `temp_bottom_${this.generateId()}`,
+          type: itemType,
+          text: `${itemType} (Connexion à l'entrée)`,
+          position: inputNodePosition,
+          maxInputs: flowStateService.getDefaultMaxInputs(itemType),
+          maxOutputs: flowStateService.getDefaultMaxOutputs(itemType)
+        });
         
-        // Créer une connexion temporaire
-        const inputConnection: Connection = {
-          id: `temp_conn_${generateGuid()}`,
+        // Créer une connexion temporaire via le service centralisé
+        flowStateService.createTemporaryConnection({
+          id: `temp_conn_${this.generateId()}`,
           sourceId: `output_${inputTempNode.id}`,
           targetId: `input_${node.id}`
-        };
-        result.connections.push(inputConnection);
+        });
+        
+        createdNodesCount++;
       }
     }
     
-    return result;
+    return createdNodesCount;
   }
   
-  // Méthode pour trouver un nœud connecté en utilisant la fonction passée au constructeur
+  /**
+   * Trouve un nœud connecté par son ID
+   * @param nodeId ID du nœud à trouver
+   * @returns Le nœud trouvé ou undefined
+   * @private
+   */
   private findConnectedNode(nodeId: string): CrmNode | undefined {
-    return this.getAllNodes().find(node => node.id === nodeId);
+    return this.getAllNodes().find(n => n.id === nodeId);
+  }
+  
+  /**
+   * Génère un identifiant unique
+   * @returns L'identifiant généré
+   * @private
+   */
+  private generateId(): string {
+    return Math.random().toString(36).substring(2, 15) + 
+           Math.random().toString(36).substring(2, 15);
   }
 }
 
 /**
  * Stratégie pour la création de nœuds temporaires autour d'un MultiSplit
  */
-export class MultiSplitStrategy implements TemporaryNodeStrategy {
+export class MultiSplitStrategy implements CentralizedTemporaryNodeStrategy {
   constructor(private getAllNodes: () => CrmNode[]) {}
 
   canApply(
@@ -277,151 +335,174 @@ export class MultiSplitStrategy implements TemporaryNodeStrategy {
     existingOutputConnections: Connection[],
     existingInputConnections: Connection[],
     itemType: string,
-    isPositionFree: (position: {x: number, y: number}) => boolean,
-    getDefaultMaxInputs: (type: string) => number,
-    getDefaultMaxOutputs: (type: string) => number
-  ): TemporaryNodesResult {
-    const result: TemporaryNodesResult = {
-      nodes: [],
-      connections: []
-    };
+    flowStateService: FlowStateService
+  ): number {
+    let createdNodesCount = 0;
     
-    // Pour un MultiSplit, autoriser l'ajout de connexions si moins de 5 sorties
-    const maxOutputs = 5;
-    const canAcceptMoreOutputs = existingOutputConnections.length < maxOutputs;
+    // Pour un MultiSplit, le nombre de sorties peut être illimité
+    const canAcceptMoreOutputs = true;
     const canAcceptMoreInputs = existingInputConnections.length < 1;
     
     // Vérifier si le nœud du type dragué peut avoir des entrées
-    const newNodeCanHaveInputs = getDefaultMaxInputs(itemType) > 0;
+    const newNodeCanHaveInputs = flowStateService.getDefaultMaxInputs(itemType) > 0;
     
     if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
-      // Disposition horizontale avec décalage vertical
-      // Tous les nœuds à la même distance horizontale, mais à différentes hauteurs
-      const horizontalOffset = 350; // Distance horizontale uniforme
-      const verticalStep = 120;     // Espacement vertical entre chaque branche
+      // Pour le MultiSplit, positionner les nœuds en éventail à droite
+      // Obtenir les positions des connexions existantes
+      const connectedNodePositions = existingOutputConnections
+        .map(conn => {
+          const targetNodeId = conn.targetId.replace('input_', '');
+          return this.findConnectedNode(targetNodeId);
+        })
+        .filter((n): n is CrmNode => n !== undefined)
+        .map(n => n.position.y);
       
-      // Calculer la position verticale de départ pour centrer les branches
-      const startY = node.position.y - ((maxOutputs - 1) * verticalStep) / 2;
+      // Créer un nœud temporaire à droite, trouver un espace libre
+      const horizontalOffset = 350;
       
-      // Déterminer quelles positions sont déjà occupées
-      const usedIndices = new Set<number>();
+      // Calculer la position Y optimale (éviter les nœuds existants)
+      let optimalY = node.position.y;
+      const minSpace = 150; // Espace minimum entre les nœuds
       
-      // Trouver les nœuds cibles des connexions existantes
-      for (const conn of existingOutputConnections) {
-        const targetNodeId = conn.targetId.replace('input_', '');
-        const targetNode = this.findConnectedNode(targetNodeId);
-        
-        if (targetNode) {
-          // Déterminer quel indice de branche est le plus proche de ce nœud
-          for (let i = 0; i < maxOutputs; i++) {
-            const branchY = startY + i * verticalStep;
-            // Si c'est à peu près la même position verticale, considérer comme utilisée
-            if (Math.abs(targetNode.position.y - branchY) < verticalStep / 2) {
-              usedIndices.add(i);
-              break;
-            }
+      // Si la position par défaut est trop proche d'un nœud existant,
+      // chercher une position plus libre
+      if (connectedNodePositions.some(y => Math.abs(y - optimalY) < minSpace)) {
+        // Essayer des positions vers le haut et vers le bas jusqu'à trouver un espace
+        for (let offset = minSpace; offset <= 500; offset += minSpace) {
+          // Essayer au-dessus
+          const topY = node.position.y - offset;
+          if (!connectedNodePositions.some(y => Math.abs(y - topY) < minSpace)) {
+            optimalY = topY;
+            break;
           }
-        }
-      }
-      
-      // Créer des nœuds temporaires pour les positions disponibles
-      for (let i = 0; i < maxOutputs; i++) {
-        if (!usedIndices.has(i)) {
-          const position = {
-            x: node.position.x + horizontalOffset,
-            y: startY + i * verticalStep
-          };
           
-          // Vérifier que la position est libre
-          if (isPositionFree(position)) {
-            const multiSplitTempNode: CrmNode = {
-              id: `temp_multisplit_${i}_${generateGuid()}`,
-              type: itemType,
-              text: `${itemType} (Branche ${i + 1})`,
-              position: position,
-              maxInputs: getDefaultMaxInputs(itemType),
-              maxOutputs: getDefaultMaxOutputs(itemType)
-            };
-            
-            result.nodes.push(multiSplitTempNode);
-            
-            // Créer une connexion temporaire
-            const multiSplitConnection: Connection = {
-              id: `temp_conn_${generateGuid()}`,
-              sourceId: `output_${node.id}`,
-              targetId: `input_${multiSplitTempNode.id}`
-            };
-            result.connections.push(multiSplitConnection);
+          // Essayer en-dessous
+          const bottomY = node.position.y + offset;
+          if (!connectedNodePositions.some(y => Math.abs(y - bottomY) < minSpace)) {
+            optimalY = bottomY;
+            break;
           }
         }
       }
-    }
-    
-    // Gérer l'entrée du MultiSplit si nécessaire
-    const newNodeCanHaveOutputs = getDefaultMaxOutputs(itemType) > 0;
-    
-    if (canAcceptMoreInputs && newNodeCanHaveOutputs) {
-      const inputTempNode: CrmNode = {
-        id: `temp_input_${generateGuid()}`,
-        type: itemType,
-        text: `${itemType} (Connexion à l'entrée)`,
-        position: { 
-          x: node.position.x - 350,
-          y: node.position.y
-        },
-        maxInputs: getDefaultMaxInputs(itemType),
-        maxOutputs: getDefaultMaxOutputs(itemType)
+      
+      const multiSplitNodePosition = {
+        x: node.position.x + horizontalOffset,
+        y: optimalY
       };
       
-      // Vérifier que la position est libre
-      if (isPositionFree(inputTempNode.position)) {
-        result.nodes.push(inputTempNode);
+      // Vérifier que les positions ne se superposent pas
+      if (flowStateService.isPositionFree(multiSplitNodePosition)) {
+        // Créer le nœud temporaire via le service centralisé
+        const multiSplitTempNode = flowStateService.createTemporaryNode({
+          id: `temp_multisplit_${this.generateId()}`,
+          type: itemType,
+          text: `${itemType} (Nouvelle branche)`,
+          position: multiSplitNodePosition,
+          maxInputs: flowStateService.getDefaultMaxInputs(itemType),
+          maxOutputs: flowStateService.getDefaultMaxOutputs(itemType)
+        });
         
-        // Créer une connexion temporaire
-        const inputConnection: Connection = {
-          id: `temp_conn_${generateGuid()}`,
-          sourceId: `output_${inputTempNode.id}`,
-          targetId: `input_${node.id}`
-        };
-        result.connections.push(inputConnection);
+        // Créer une connexion temporaire via le service centralisé
+        flowStateService.createTemporaryConnection({
+          id: `temp_conn_${this.generateId()}`,
+          sourceId: `output_${node.id}`,
+          targetId: `input_${multiSplitTempNode.id}`
+        });
+        
+        createdNodesCount++;
       }
     }
     
-    return result;
+    // Le reste de la logique standard pour l'entrée du MultiSplit
+    const newNodeCanHaveOutputs = flowStateService.getDefaultMaxOutputs(itemType) > 0;
+    
+    if (canAcceptMoreInputs && newNodeCanHaveOutputs) {
+      const inputNodePosition = {
+        x: node.position.x - 350,
+        y: node.position.y
+      };
+      
+      // Vérifier que les positions ne se superposent pas
+      if (flowStateService.isPositionFree(inputNodePosition)) {
+        // Créer le nœud temporaire via le service centralisé
+        const inputTempNode = flowStateService.createTemporaryNode({
+          id: `temp_input_${this.generateId()}`,
+          type: itemType,
+          text: `${itemType} (Connexion à l'entrée)`,
+          position: inputNodePosition,
+          maxInputs: flowStateService.getDefaultMaxInputs(itemType),
+          maxOutputs: flowStateService.getDefaultMaxOutputs(itemType)
+        });
+        
+        // Créer une connexion temporaire via le service centralisé
+        flowStateService.createTemporaryConnection({
+          id: `temp_conn_${this.generateId()}`,
+          sourceId: `output_${inputTempNode.id}`,
+          targetId: `input_${node.id}`
+        });
+        
+        createdNodesCount++;
+      }
+    }
+    
+    return createdNodesCount;
   }
   
-  // Méthode pour trouver un nœud connecté en utilisant la fonction passée au constructeur
+  /**
+   * Trouve un nœud connecté par son ID
+   * @param nodeId ID du nœud à trouver
+   * @returns Le nœud trouvé ou undefined
+   * @private
+   */
   private findConnectedNode(nodeId: string): CrmNode | undefined {
-    return this.getAllNodes().find(node => node.id === nodeId);
+    return this.getAllNodes().find(n => n.id === nodeId);
+  }
+  
+  /**
+   * Génère un identifiant unique
+   * @returns L'identifiant généré
+   * @private
+   */
+  private generateId(): string {
+    return Math.random().toString(36).substring(2, 15) + 
+           Math.random().toString(36).substring(2, 15);
   }
 }
 
 /**
- * Factory qui retourne la stratégie appropriée selon le type de nœud
+ * Factory pour créer les stratégies de nœuds temporaires
  */
 export class TemporaryNodeStrategyFactory {
+  private strategies: CentralizedTemporaryNodeStrategy[];
+  
   constructor(private getAllNodes: () => CrmNode[]) {
     this.strategies = [
       new BinarySplitStrategy(getAllNodes),
       new MultiSplitStrategy(getAllNodes),
-      new StandardNodeStrategy() // Stratégie par défaut, doit être en dernier
+      new StandardNodeStrategy() // Stratégie par défaut en dernier
     ];
   }
-
-  private strategies: TemporaryNodeStrategy[];
   
+  /**
+   * Renvoie la stratégie appropriée pour un nœud spécifique
+   * @param node Le nœud existant
+   * @param existingOutputConnections Les connexions de sortie existantes
+   * @param existingInputConnections Les connexions d'entrée existantes
+   * @param itemType Le type d'élément en cours de drag
+   * @returns La stratégie à utiliser
+   */
   getStrategy(
     node: CrmNode,
     existingOutputConnections: Connection[],
     existingInputConnections: Connection[],
     itemType: string
-  ): TemporaryNodeStrategy {
-    for (const strategy of this.strategies) {
-      if (strategy.canApply(node, existingOutputConnections, existingInputConnections, itemType)) {
-        return strategy;
-      }
-    }
-    // La stratégie par défaut devrait toujours être applicable
-    return this.strategies[this.strategies.length - 1];
+  ): CentralizedTemporaryNodeStrategy {
+    // Trouver la première stratégie qui peut être appliquée
+    const strategy = this.strategies.find(s => 
+      s.canApply(node, existingOutputConnections, existingInputConnections, itemType)
+    );
+    
+    // Si aucune stratégie n'est trouvée, utiliser la dernière (la stratégie standard)
+    return strategy || this.strategies[this.strategies.length - 1];
   }
 } 

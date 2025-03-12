@@ -126,12 +126,61 @@ export class FlowStateService {
   /**
    * Ajoute un nœud au flow
    * @param node Le nœud à ajouter
+   * @returns Le nœud ajouté
    */
-  addNode(node: CrmNode): void {
+  addNode(node: CrmNode): CrmNode {
+    const nodeClone = structuredClone(node);
+    
+    // Générer un ID s'il n'existe pas
+    if (!nodeClone.id) {
+      nodeClone.id = `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    }
+    
+    // S'assurer que les valeurs par défaut sont définies
+    if (nodeClone.maxInputs === undefined) {
+      nodeClone.maxInputs = this.getDefaultMaxInputs(nodeClone.type);
+    }
+    
+    if (nodeClone.maxOutputs === undefined) {
+      nodeClone.maxOutputs = this.getDefaultMaxOutputs(nodeClone.type);
+    }
+    
     this._state.update(state => ({
       ...state,
-      nodes: [...state.nodes, structuredClone(node)]
+      nodes: [...state.nodes, nodeClone]
     }));
+    
+    console.log(`Added node ${nodeClone.id} of type ${nodeClone.type} to state`);
+    return nodeClone;
+  }
+
+  /**
+   * Supprime un nœud du flow
+   * @param nodeId L'ID du nœud à supprimer
+   * @returns true si le nœud a été trouvé et supprimé, false sinon
+   */
+  removeNode(nodeId: string): boolean {
+    const initialNodeCount = this._state().nodes.length;
+    
+    // Supprimer également toutes les connexions associées
+    const connectionsToRemove = [
+      ...this.getConnectionsFrom(`output_${nodeId}`),
+      ...this.getConnectionsTo(`input_${nodeId}`)
+    ];
+    
+    for (const connection of connectionsToRemove) {
+      this.removeConnection(connection.id);
+    }
+    
+    // Supprimer le nœud
+    this._state.update(state => ({
+      ...state,
+      nodes: state.nodes.filter(n => n.id !== nodeId)
+    }));
+    
+    const nodeRemoved = initialNodeCount > this._state().nodes.length;
+    console.log(`Removed node ${nodeId} from state: ${nodeRemoved}`);
+    return nodeRemoved;
   }
 
   /**
@@ -148,12 +197,41 @@ export class FlowStateService {
   /**
    * Ajoute une connexion au flow
    * @param connection La connexion à ajouter
+   * @returns La connexion ajoutée
    */
-  addConnection(connection: Connection): void {
+  addConnection(connection: Connection): Connection {
+    const connectionClone = structuredClone(connection);
+    
+    // Générer un ID s'il n'existe pas
+    if (!connectionClone.id) {
+      connectionClone.id = `conn-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    }
+    
     this._state.update(state => ({
       ...state,
-      connections: [...state.connections, structuredClone(connection)]
+      connections: [...state.connections, connectionClone]
     }));
+    
+    console.log(`Added connection ${connectionClone.id} from ${connectionClone.sourceId} to ${connectionClone.targetId}`);
+    return connectionClone;
+  }
+
+  /**
+   * Supprime une connexion du flow
+   * @param connectionId L'ID de la connexion à supprimer
+   * @returns true si la connexion a été trouvée et supprimée, false sinon
+   */
+  removeConnection(connectionId: string): boolean {
+    const initialConnectionCount = this._state().connections.length;
+    
+    this._state.update(state => ({
+      ...state,
+      connections: state.connections.filter(c => c.id !== connectionId)
+    }));
+    
+    const connectionRemoved = initialConnectionCount > this._state().connections.length;
+    console.log(`Removed connection ${connectionId} from state: ${connectionRemoved}`);
+    return connectionRemoved;
   }
 
   /**
@@ -356,5 +434,115 @@ export class FlowStateService {
    */
   getConnectionsTo(nodeId: string): Connection[] {
     return this.connections().filter(conn => conn.targetId === nodeId);
+  }
+
+  /**
+   * Crée et ajoute un nœud temporaire
+   * @param nodeData Les données du nœud temporaire
+   * @returns Le nœud temporaire créé
+   */
+  createTemporaryNode(nodeData: Partial<CrmNode>): CrmNode {
+    const tempNode: CrmNode = {
+      id: nodeData.id || `temp_${Math.floor(Math.random() * 10000)}_${Date.now()}`,
+      type: nodeData.type || 'Unknown',
+      text: nodeData.text || `${nodeData.type || 'Node'} (Temporary)`,
+      position: nodeData.position || { x: 0, y: 0 },
+      maxInputs: nodeData.maxInputs !== undefined 
+        ? nodeData.maxInputs 
+        : this.getDefaultMaxInputs(nodeData.type || 'Unknown'),
+      maxOutputs: nodeData.maxOutputs !== undefined 
+        ? nodeData.maxOutputs 
+        : this.getDefaultMaxOutputs(nodeData.type || 'Unknown')
+    };
+    
+    // Ajouter le nœud temporaire à l'état
+    this._state.update(state => ({
+      ...state,
+      temporaryElements: {
+        ...state.temporaryElements,
+        nodes: [...state.temporaryElements.nodes, tempNode]
+      }
+    }));
+    
+    console.log(`Created temporary node ${tempNode.id} of type ${tempNode.type}`);
+    return tempNode;
+  }
+
+  /**
+   * Crée et ajoute une connexion temporaire
+   * @param connectionData Les données de la connexion temporaire
+   * @returns La connexion temporaire créée
+   */
+  createTemporaryConnection(connectionData: Partial<Connection>): Connection {
+    const tempConnection: Connection = {
+      id: connectionData.id || `temp_conn_${Math.floor(Math.random() * 10000)}_${Date.now()}`,
+      sourceId: connectionData.sourceId || '',
+      targetId: connectionData.targetId || ''
+    };
+    
+    // Ajouter la connexion temporaire à l'état
+    this._state.update(state => ({
+      ...state,
+      temporaryElements: {
+        ...state.temporaryElements,
+        connections: [...state.temporaryElements.connections, tempConnection]
+      }
+    }));
+    
+    console.log(`Created temporary connection ${tempConnection.id} from ${tempConnection.sourceId} to ${tempConnection.targetId}`);
+    return tempConnection;
+  }
+
+  /**
+   * Convertit un nœud temporaire en nœud permanent
+   * @param temporaryNodeId L'ID du nœud temporaire à convertir
+   * @returns Le nouveau nœud permanent ou null si le nœud temporaire n'a pas été trouvé
+   */
+  convertTemporaryNodeToPermanent(temporaryNodeId: string): CrmNode | null {
+    // Trouver le nœud temporaire
+    const tempNode = this._state().temporaryElements.nodes.find(n => n.id === temporaryNodeId);
+    if (!tempNode) {
+      console.warn(`Temporary node with id ${temporaryNodeId} not found for conversion`);
+      return null;
+    }
+    
+    // Créer un nouveau nœud permanent à partir du nœud temporaire
+    const newNode: CrmNode = {
+      id: `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      type: tempNode.type,
+      text: tempNode.text.replace(' (Temporary)', '').replace(' (Drop here)', ''),
+      position: { ...tempNode.position },
+      maxInputs: tempNode.maxInputs,
+      maxOutputs: tempNode.maxOutputs
+    };
+    
+    // Ajouter le nouveau nœud permanent
+    this.addNode(newNode);
+    
+    // Trouver les connexions temporaires associées
+    const relatedTempConnections = this._state().temporaryElements.connections.filter(
+      conn => conn.sourceId.includes(temporaryNodeId) || conn.targetId.includes(temporaryNodeId)
+    );
+    
+    // Créer des connexions permanentes en remplacement
+    for (const tempConn of relatedTempConnections) {
+      const isSource = tempConn.sourceId.includes(temporaryNodeId);
+      
+      // Créer une nouvelle connexion permanente
+      const newConnection: Connection = {
+        id: `conn-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        sourceId: isSource ? `output_${newNode.id}` : tempConn.sourceId,
+        targetId: !isSource ? `input_${newNode.id}` : tempConn.targetId
+      };
+      
+      // Ajouter la nouvelle connexion permanente
+      this.addConnection(newConnection);
+    }
+    
+    // Nettoyer tous les éléments temporaires
+    this.clearTemporaryElements();
+    
+    console.log(`Converted temporary node ${temporaryNodeId} to permanent node ${newNode.id}`);
+    return newNode;
   }
 }

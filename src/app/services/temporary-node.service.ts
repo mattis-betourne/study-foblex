@@ -95,7 +95,7 @@ export class TemporaryNodeService {
    * Nettoie les éléments temporaires
    */
   clearTemporaryElements(): void {
-    // Effacer les nœuds et connexions temporaires
+    // Déléguer au FlowStateService
     this.flowStateService.clearTemporaryElements();
   }
 
@@ -125,8 +125,8 @@ export class TemporaryNodeService {
     
     console.log(`Creating temp nodes for type ${itemType} with max inputs: ${maxInputsForType}, max outputs: ${maxOutputsForType}`);
     
-    const allTempNodes: CrmNode[] = [];
-    const allTempConnections: Connection[] = [];
+    // Compteur pour suivre le nombre total de nœuds créés
+    let totalNodesCreated = 0;
     
     // Pour chaque nœud existant
     nodes.forEach(node => {
@@ -167,33 +167,23 @@ export class TemporaryNodeService {
           (canAcceptMoreInputs && maxOutputsForType > 0)) {
         console.log(`Creating temporary nodes around node ${node.id} (${node.type})`);
         
-        // Créer les nœuds temporaires avec cette stratégie
-        const result = strategy.createTemporaryNodes(
+        // Créer les nœuds temporaires avec cette stratégie en passant directement le service d'état
+        const nodesCreated = strategy.createTemporaryNodes(
           node,
           existingOutputConnections,
           existingInputConnections,
           itemType,
-          // Utiliser directement les méthodes du FlowStateService au lieu des fonctions injectées
-          (position) => this.flowStateService.isPositionFree(position),
-          (type) => this.flowStateService.getDefaultMaxInputs(type),
-          (type) => this.flowStateService.getDefaultMaxOutputs(type)
+          this.flowStateService
         );
         
-        console.log(`Strategy created ${result.nodes.length} temporary nodes and ${result.connections.length} connections`);
-        
-        // Ajouter les nœuds et connexions temporaires aux collections
-        allTempNodes.push(...result.nodes);
-        allTempConnections.push(...result.connections);
+        totalNodesCreated += nodesCreated;
+        console.log(`Strategy created ${nodesCreated} temporary nodes for node ${node.id}`);
       } else {
         console.log(`Skipping temporary node creation for node ${node.id} (${node.type}) - restrictions apply`);
       }
     });
     
-    console.log(`Created ${allTempNodes.length} temporary nodes and ${allTempConnections.length} connections`);
-    
-    // Mettre à jour les signaux avec les nouveaux nœuds et connexions temporaires
-    this.flowStateService.updateTemporaryNodes(allTempNodes);
-    this.flowStateService.updateTemporaryConnections(allTempConnections);
+    console.log(`Finished creating ${totalNodesCreated} temporary nodes and connections`);
   }
 
   /**
@@ -202,21 +192,15 @@ export class TemporaryNodeService {
    * @private
    */
   private createCentralTemporaryNode(itemType: string): void {
-    // Créer un nœud temporaire au centre du canvas
-    const centralTempNode: CrmNode = {
-      id: `temp_central_${Math.floor(Math.random() * 10000)}`,
+    // Créer un nœud temporaire au centre du canvas en utilisant la méthode centralisée
+    this.flowStateService.createTemporaryNode({
       type: itemType,
       text: `${itemType} (Drop here)`,
-      position: { x: 400, y: 300 },
-      maxInputs: this.flowStateService.getDefaultMaxInputs(itemType),
-      maxOutputs: this.flowStateService.getDefaultMaxOutputs(itemType)
-    };
+      position: { x: 400, y: 300 }
+      // Les maxInputs et maxOutputs seront automatiquement définis par createTemporaryNode
+    });
     
-    console.log('Created central temporary node:', centralTempNode);
-    
-    // Mettre à jour les signaux
-    this.flowStateService.updateTemporaryNodes([centralTempNode]);
-    this.flowStateService.updateTemporaryConnections([]);
+    console.log('Created central temporary node for empty flow');
   }
 
   /**
@@ -229,40 +213,19 @@ export class TemporaryNodeService {
     position: {x: number, y: number};
     connections: {sourceId: string, targetId: string}[];
   } | null {
-    // Trouver le nœud temporaire
-    const temporaryNode = this.temporaryNodes.find(node => node.id === temporaryNodeId);
-    if (!temporaryNode) {
-      console.warn(`Temporary node with id ${temporaryNodeId} not found`);
+    // Déléguer la conversion au FlowStateService et récupérer le résultat
+    const permanentNode = this.flowStateService.convertTemporaryNodeToPermanent(temporaryNodeId);
+    
+    if (!permanentNode) {
+      console.warn(`Failed to convert temporary node ${temporaryNodeId} to permanent node`);
       return null;
     }
-
-    // Trouver les connexions liées à ce nœud temporaire
-    const relatedConnections = this.temporaryConnections.filter(
-      conn => conn.sourceId.includes(temporaryNodeId) || conn.targetId.includes(temporaryNodeId)
-    );
-
-    console.log('Found related temporary connections:', relatedConnections);
-
-    // Préparer les informations pour la création du nœud réel
-    const result = {
-      nodeType: temporaryNode.type,
-      position: { ...temporaryNode.position },
-      connections: relatedConnections.map(conn => {
-        const isSource = conn.sourceId.includes(temporaryNodeId);
-        
-        // Conserver le format des identifiants (input_/output_)
-        return {
-          sourceId: isSource ? '' : conn.sourceId,
-          targetId: !isSource ? '' : conn.targetId
-        };
-      })
+    
+    // Pour maintenir la compatibilité avec le code existant, retourner le format attendu
+    return {
+      nodeType: permanentNode.type,
+      position: { ...permanentNode.position },
+      connections: [] // Les connexions ont déjà été créées par convertTemporaryNodeToPermanent
     };
-
-    console.log('Prepared result for node creation:', result);
-
-    // Nettoyer les nœuds temporaires
-    this.clearTemporaryElements();
-
-    return result;
   }
 } 

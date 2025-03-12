@@ -5,13 +5,16 @@ import {
   ChangeDetectorRef,
   Component,
   DestroyRef,
+  ElementRef,
   HostListener,
   OnInit,
+  QueryList,
   ViewChild,
+  ViewChildren,
   inject
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FCanvasComponent, FFlowModule, FSelectionChangeEvent, FZoomDirective } from '@foblex/flow';
+import { FCanvasComponent, FFlowModule, FFlowComponent, FSelectionChangeEvent, FZoomDirective } from '@foblex/flow';
 import { TemporaryNodeDirective } from '../../directives/temporary-node.directive';
 import { Connection, CrmNode } from '../../models/crm.models';
 import { FlowStateService } from '../../services/flow-state.service';
@@ -19,6 +22,7 @@ import { FlowService } from '../../services/flow.service';
 import { TemporaryNodeService } from '../../services/temporary-node.service';
 import { ZoomService } from '../../services/zoom.service';
 import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
+import { FoblexIdManagerService } from '../../services/foblex-id-manager.service';
 
 /**
  * Composant qui encapsule le flow diagram
@@ -41,18 +45,29 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   @ViewChild('canvas') canvas!: FCanvasComponent;
   
   /** Référence au composant flow de Foblex Flow */
-  @ViewChild('flow') flow!: FCanvasComponent;
+  @ViewChild('flow') flow!: FFlowComponent;
   
   /** Référence à la directive de zoom */
   @ViewChild(FZoomDirective) zoomDirective!: FZoomDirective;
+  
+  /** Référence à l'élément conteneur DOM */
+  @ViewChild('flowContainer', { static: true }) flowContainerRef!: ElementRef;
   
   /** Services injectés */
   readonly flowService = inject(FlowService);
   readonly zoomService = inject(ZoomService);
   readonly temporaryNodeService = inject(TemporaryNodeService);
   readonly flowStateService = inject(FlowStateService);
+  readonly foblexIdManager = inject(FoblexIdManagerService);
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly elementRef = inject(ElementRef);
+  
+  /** Observer pour détecter les modifications DOM */
+  private mutationObserver: MutationObserver | null = null;
+  
+  /** Flag pour éviter les synchronisations en cascade */
+  private isSynchronizing = false;
   
   constructor() {
     console.log('FlowContainer constructor - Initializing default nodes');
@@ -69,6 +84,9 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     
     // Vérifier que les nœuds ont été créés
     console.log('Nodes after initialization:', this.flowStateService.nodes());
+    
+    // Écouter les événements de synchronisation ID
+    document.addEventListener('foblex-id-sync-required', this.handleSyncRequest);
     
     // S'abonner aux changements de draggingItemType
     this.temporaryNodeService.draggingItemType$
@@ -93,6 +111,13 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
         console.log('Nodes updated:', nodes);
         // Forcer la détection de changements après chaque mise à jour des nœuds
         this.changeDetectorRef.detectChanges();
+        
+        // Synchroniser les IDs avec Foblex Flow uniquement si nécessaire
+        // (si des nœuds n'ont pas d'ID Foblex et qu'aucune synchronisation n'est en cours)
+        if (!this.isSynchronizing && nodes.some(n => !n.foblexId)) {
+          console.log('Some nodes need to be synchronized with Foblex');
+          setTimeout(() => this.syncFoblexIds(), 100);
+        }
       });
     
     // S'abonner également aux changements de connexions pour la même raison
@@ -102,6 +127,13 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
         console.log('Connections updated:', connections);
         // Forcer la détection de changements après chaque mise à jour des connexions
         this.changeDetectorRef.detectChanges();
+        
+        // Synchroniser les IDs avec Foblex Flow uniquement si nécessaire
+        // (si des connexions n'ont pas d'ID Foblex et qu'aucune synchronisation n'est en cours)
+        if (!this.isSynchronizing && connections.length > 0 && connections.some(c => !c.foblexId)) {
+          console.log('Some connections need to be synchronized with Foblex');
+          setTimeout(() => this.syncFoblexIds(), 100);
+        }
       });
   }
   
@@ -141,46 +173,260 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
           console.error('Error getting initial canvas scale:', error);
         }
       }
+      
+      // Mettre en place l'observateur de mutations DOM pour détecter
+      // les ajouts/suppressions de nœuds et connexions
+      this.setupMutationObserver();
+      
+      // Effectuer une première synchronisation des ID après le rendu initial
+      setTimeout(() => this.syncFoblexIds(), 300);
     });
   }
   
   /**
-   * Gestionnaire pour l'événement de création d'un nœud de Foblex Flow
-   * @param event L'événement de création de nœud
+   * Configure l'observateur de mutations pour surveiller les changements DOM
    */
-  onCreateNode(event: any): void {
-    try {
-      console.log('Create node event received:', event);
+  private setupMutationObserver(): void {
+    if (!this.elementRef || !this.elementRef.nativeElement) {
+      console.error('ElementRef not available for mutation observer');
+      return;
+    }
+    
+    // Créer l'observateur de mutations
+    this.mutationObserver = new MutationObserver((mutations) => {
+      let shouldSync = false;
       
-      // Vérifier si nous sommes actuellement en cours de drag ou si des nœuds temporaires sont affichés
-      // Dans ce cas, ne pas traiter l'événement fCreateNode pour éviter les duplications
-      if (this.flowStateService.draggingItemType() || this.flowStateService.temporaryNodes().length > 0) {
-        console.log('Ignoring fCreateNode event during drag or when temporary nodes exist');
+      // Vérifier si des nœuds ou connexions ont été ajoutés/supprimés
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList') {
+          for (const node of Array.from(mutation.addedNodes)) {
+            if (node instanceof HTMLElement) {
+              if (node.hasAttribute('fnode') || node.tagName.toLowerCase() === 'f-connection') {
+                shouldSync = true;
+                break;
+              }
+            }
+          }
+          
+          if (shouldSync) break;
+          
+          for (const node of Array.from(mutation.removedNodes)) {
+            if (node instanceof HTMLElement) {
+              if (node.hasAttribute('fnode') || node.tagName.toLowerCase() === 'f-connection') {
+                shouldSync = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // Si des nœuds/connexions ont été modifiés, synchroniser les IDs
+      if (shouldSync) {
+        console.log('DOM mutation detected, synchronizing Foblex IDs');
+        this.syncFoblexIds();
+      }
+    });
+    
+    // Démarrer l'observation du DOM en surveillant les enfants
+    this.mutationObserver.observe(this.elementRef.nativeElement, {
+      childList: true,
+      subtree: true
+    });
+    
+    console.log('Mutation observer setup complete');
+  }
+  
+  /**
+   * Nettoie les ressources lors de la destruction du composant
+   */
+  ngOnDestroy(): void {
+    // Arrêter l'observateur de mutations
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect();
+      this.mutationObserver = null;
+    }
+    
+    // Retirer l'écouteur d'événement de synchronisation ID
+    document.removeEventListener('foblex-id-sync-required', this.handleSyncRequest);
+  }
+  
+  /**
+   * Gestionnaire pour l'événement de synchronisation ID
+   * Défini comme méthode distincte pour pouvoir le supprimer proprement
+   */
+  private handleSyncRequest = (): void => {
+    console.log('Received foblex-id-sync-required event');
+    
+    // Ne pas déclencher de synchronisation si une est déjà en cours
+    if (this.isSynchronizing) {
+      console.log('Synchronization already in progress, ignoring request');
+      return;
+    }
+    
+    setTimeout(() => this.syncFoblexIds(), 100);
+  };
+  
+  /**
+   * Synchronise les IDs entre notre modèle et Foblex Flow
+   */
+  private syncFoblexIds(): void {
+    // Si une synchronisation est déjà en cours, annuler
+    if (this.isSynchronizing) {
+      console.log('Synchronization already in progress, skipping');
+      return;
+    }
+    
+    if (!this.elementRef || !this.elementRef.nativeElement) {
+      console.warn('ElementRef not available for ID synchronization');
+      return;
+    }
+    
+    // Vérifier d'abord si une synchronisation est nécessaire
+    const unsyncedNodesCount = this.flowStateService.nodes().filter(n => !n.foblexId).length;
+    const unsyncedConnectionsCount = this.flowStateService.connections().filter(c => !c.foblexId).length;
+    
+    if (unsyncedNodesCount === 0 && unsyncedConnectionsCount === 0 && 
+        this.flowStateService.nodes().length > 0) {
+      console.log('All nodes and connections are already synchronized, skipping');
+      return;
+    }
+    
+    // Activer le flag de synchronisation
+    this.isSynchronizing = true;
+    
+    console.log('Starting Foblex ID synchronization');
+    
+    // Synchroniser les nœuds
+    const nodeElements = this.elementRef.nativeElement.querySelectorAll('[fnode]');
+    console.log(`Found ${nodeElements.length} node elements in DOM`);
+    
+    nodeElements.forEach((nodeElement: HTMLElement, index: number) => {
+      // Ignorer les nœuds temporaires
+      if (nodeElement.classList.contains('temporary-node')) {
         return;
       }
-
-      // Extraire les propriétés de l'événement
-      const { nodeType } = event;
-
-      // Générer un identifiant unique pour le nouveau nœud
-      const nodeId = `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       
-      // Créer le nœud
-      const newNode: CrmNode = {
-        id: nodeId,
-        type: nodeType,
-        text: `${nodeType} ${this.flowStateService.nodes().length + 1}`,
-        position: event.rect
-      };
-
-      // Ajouter le nœud et sauvegarder l'état
-      this.flowService.addNodeAndSave(newNode);
+      // Récupérer les IDs Foblex
+      const foblexId = this.foblexIdManager.getNodeFoblexIdFromElement(nodeElement);
+      const fInputId = this.foblexIdManager.getNodeInputIdFromElement(nodeElement);
+      const fOutputId = this.foblexIdManager.getNodeOutputIdFromElement(nodeElement);
+      const dataNodeId = nodeElement.getAttribute('data-node-id');
       
-      // Force la mise à jour de la vue
-      this.changeDetectorRef.markForCheck();
-    } catch (error) {
-      console.error('Error creating node:', error);
-    }
+      console.log(`Node Element ${index}: foblexId=${foblexId}, dataNodeId=${dataNodeId}`);
+      
+      if (foblexId) {
+        // Trouver notre ID interne à partir de la correspondance avec les attributs data-node-id
+        if (dataNodeId) {
+          const node = this.flowStateService.nodes().find(n => n.id === dataNodeId);
+          if (node) {
+            console.log(`Synchronizing node ${node.id} with Foblex ID ${foblexId}`);
+            this.foblexIdManager.syncNodeIds(node, foblexId, fInputId || undefined, fOutputId || undefined);
+          } else {
+            console.warn(`Could not find node with id ${dataNodeId} in our state`);
+          }
+        } else {
+          // Si nous n'avons pas de data-node-id, essayer de trouver le nœud par position
+          console.log(`No data-node-id for element with foblexId ${foblexId}, trying to match by position`);
+          
+          // Extraire la position du style transform
+          const transform = nodeElement.style.transform;
+          const match = transform.match(/translate\((\d+)px,\s*(\d+)px\)/);
+          
+          if (match && match.length >= 3) {
+            const x = parseInt(match[1], 10);
+            const y = parseInt(match[2], 10);
+            
+            // Chercher un nœud avec une position proche
+            const matchingNode = this.flowStateService.nodes().find(n => 
+              Math.abs(n.position.x - x) < 10 && Math.abs(n.position.y - y) < 10
+            );
+            
+            if (matchingNode) {
+              console.log(`Found node by position match: ${matchingNode.id} at (${x}, ${y})`);
+              this.foblexIdManager.syncNodeIds(matchingNode, foblexId, fInputId || undefined, fOutputId || undefined);
+            }
+          }
+        }
+      }
+    });
+    
+    // Synchroniser les connexions
+    const connectionElements = this.elementRef.nativeElement.querySelectorAll('f-connection');
+    console.log(`Found ${connectionElements.length} connection elements in DOM`);
+    
+    connectionElements.forEach((connectionElement: HTMLElement, index: number) => {
+      // Ignorer les connexions temporaires
+      if (connectionElement.classList.contains('temporary-connection')) {
+        return;
+      }
+      
+      // Récupérer l'ID Foblex
+      const foblexId = this.foblexIdManager.getConnectionFoblexIdFromElement(connectionElement);
+      
+      // Récupérer l'ID de la connexion à partir de l'attribut data-connection-id
+      const dataConnectionId = connectionElement.getAttribute('data-connection-id');
+      
+      console.log(`Connection Element ${index}: foblexId=${foblexId}, dataConnectionId=${dataConnectionId}`);
+      
+      if (foblexId) {
+        // D'abord, essayer de trouver la connexion par son attribut data-connection-id
+        if (dataConnectionId) {
+          const connection = this.flowStateService.connections().find(c => c.id === dataConnectionId);
+          if (connection) {
+            console.log(`Synchronizing connection ${connection.id} with Foblex ID ${foblexId}`);
+            this.foblexIdManager.syncConnectionIds(connection, foblexId);
+            // Connexion trouvée et synchronisée, on passe à la suivante
+            return;
+          } else {
+            console.warn(`Could not find connection with id ${dataConnectionId} in our state`);
+          }
+        }
+        
+        // Méthode alternative : analyser les source/target IDs dans le path
+        const pathId = connectionElement.querySelector('[data-f-path-id]');
+        if (pathId) {
+          const pathIdValue = pathId.getAttribute('data-f-path-id');
+          if (pathIdValue) {
+            // Extraire les IDs de source et cible à partir de l'ID du path
+            // Format typique: connection_f-connection-1output_XXXinput_YYY
+            const match = pathIdValue.match(/connection_(f-connection-\d+)(output_[^i]+)(input_[^"]+)/);
+            if (match && match.length >= 4) {
+              const sourceId = match[2];
+              const targetId = match[3];
+              
+              console.log(`Connection path parsed: sourceId=${sourceId}, targetId=${targetId}`);
+              
+              // Trouver la connexion correspondante dans notre état
+              const connection = this.flowStateService.connections().find(
+                c => c.sourceId === sourceId && c.targetId === targetId
+              );
+              
+              if (connection) {
+                console.log(`Synchronizing connection ${connection.id} with Foblex ID ${foblexId}`);
+                this.foblexIdManager.syncConnectionIds(connection, foblexId);
+              } else {
+                console.warn(`Could not find connection with sourceId=${sourceId} and targetId=${targetId} in our state`);
+              }
+            } else {
+              console.warn(`Could not parse connection path ID: ${pathIdValue}`);
+            }
+          }
+        }
+      }
+    });
+    
+    // Vérification finale
+    const syncedNodesCount = this.flowStateService.nodes().filter(n => !!n.foblexId).length;
+    const syncedConnectionsCount = this.flowStateService.connections().filter(c => !!c.foblexId).length;
+    
+    console.log(`Foblex ID synchronization completed. Synced: ${syncedNodesCount}/${this.flowStateService.nodes().length} nodes, ${syncedConnectionsCount}/${this.flowStateService.connections().length} connections`);
+    
+    // Désactiver le flag de synchronisation après un petit délai pour éviter 
+    // les déclenchements immédiats après la mise à jour du state
+    setTimeout(() => {
+      this.isSynchronizing = false;
+    }, 200);
   }
   
   /**
@@ -251,38 +497,17 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   }
   
   /**
-   * Améliore la méthode blockAndCleanUnauthorizedDrop pour garantir le nettoyage complet
-   * @private
+   * Nettoie les éléments temporaires et bloque un drop non autorisé
    */
-  private blockAndCleanUnauthorizedDrop(): void {
-    // Nettoyer les indicateurs de classe visuels
-    document.body.classList.remove('no-drop-allowed');
-    
-    // Vérifier s'il y a des nœuds "fantômes" créés par accident
-    const nodeElements = document.querySelectorAll('[data-fnode]');
-    nodeElements.forEach(nodeEl => {
-      const nodeId = nodeEl.getAttribute('data-fnode');
-      // Si ce nœud n'est pas dans notre liste et n'est pas un nœud temporaire, le supprimer
-      if (nodeId && !this.flowStateService.nodes().some((n: CrmNode) => n.id === nodeId) && 
-          !nodeEl.classList.contains('temporary-node')) {
-        try {
-          nodeEl.remove();
-        } catch (e) {
-          console.error('Error removing ghost node:', e);
-        }
-      }
-    });
-    
-    // Nettoyer les nœuds temporaires pour éviter les problèmes d'état
+  blockAndCleanUnauthorizedDrop(): void {
+    // Nettoyer les éléments temporaires via le service centralisé
     this.flowStateService.clearTemporaryElements();
+    
+    // Réinitialiser le type d'élément en cours de drag
     this.flowStateService.updateDraggingItemType(null);
     
-    // Réinitialiser l'état de création
-    this.flowStateService.updateIsCreatingNode(false);
-    
-    // Forcer la détection de changements pour mettre à jour l'UI
-    this.changeDetectorRef.detectChanges();
-    console.log('Drag state reset completed, temporary nodes cleared');
+    // Nettoyer la classe visuelle d'interdiction
+    document.body.classList.remove('no-drop-allowed');
   }
   
   /**
@@ -405,15 +630,15 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       return;
     }
     
-    // Si tout est valide, créer la connexion
-    const newConnection: Connection = {
+    // Si tout est valide, créer la connexion en utilisant le service centralisé
+    this.flowService.addConnectionAndSave({
       id: `conn_${Date.now()}`,
       sourceId: event.outputId,
       targetId: event.inputId
-    };
+    });
     
-    // Ajouter la connexion
-    this.flowService.addConnectionAndSave(newConnection);
+    // Planifier une synchronisation des IDs après la création de la connexion
+    setTimeout(() => this.syncFoblexIds(), 100);
   }
   
   /**
@@ -534,7 +759,89 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    */
   onSelectionChange(event: FSelectionChangeEvent): void {
     console.log('Selection changed:', event.fNodeIds);
+    
+    // Tentative additionnelle de synchronisation si nécessaire
+    if (event.fNodeIds.length > 0) {
+      // On s'assure d'abord que tous les IDs Foblex sont correctement synchronisés
+      let allNodesSynced = true;
+      
+      for (const foblexId of event.fNodeIds) {
+        // Vérifier si ce foblexId est déjà mappé à un ID interne
+        const internalId = this.foblexIdManager.getInternalIdFromFoblexId(foblexId);
+        if (!internalId) {
+          console.log(`Foblex ID ${foblexId} not yet mapped to an internal ID, will try to sync`);
+          allNodesSynced = false;
+          
+          // Essayer de trouver l'élément DOM correspondant à ce foblexId
+          const nodeElement = this.elementRef.nativeElement.querySelector(`[data-f-node-id="${foblexId}"]`);
+          if (nodeElement) {
+            // Tenter un mapping par position
+            const transform = nodeElement.style.transform;
+            const match = transform.match(/translate\((\d+)px,\s*(\d+)px\)/);
+            
+            if (match && match.length >= 3) {
+              const x = parseInt(match[1], 10);
+              const y = parseInt(match[2], 10);
+              
+              // Chercher un nœud avec une position proche
+              const matchingNode = this.flowStateService.nodes().find(n => 
+                Math.abs(n.position.x - x) < 10 && Math.abs(n.position.y - y) < 10
+              );
+              
+              if (matchingNode) {
+                console.log(`Found node by position match: ${matchingNode.id} at (${x}, ${y}), will sync with Foblex ID ${foblexId}`);
+                this.foblexIdManager.syncNodeIds(
+                  matchingNode, 
+                  foblexId, 
+                  nodeElement.getAttribute('data-f-input-id') || undefined,
+                  nodeElement.getAttribute('data-f-output-id') || undefined
+                );
+              }
+            }
+          }
+        }
+      }
+      
+      // Si tous les nœuds ne sont pas synchronisés, on force une synchronisation complète
+      if (!allNodesSynced) {
+        console.log('Some nodes not synced, forcing complete synchronization');
+        this.syncFoblexIds();
+      }
+    }
+    
+    // Conversion des IDs Foblex en IDs internes avec plus de logs
+    const internalIds = event.fNodeIds
+      .map(foblexId => {
+        const internalId = this.foblexIdManager.getInternalIdFromFoblexId(foblexId);
+        if (!internalId) {
+          console.warn(`No internal ID mapping found for Foblex ID: ${foblexId}`);
+        }
+        return internalId;
+      })
+      .filter((id): id is string => id !== undefined);
+    
+    console.log('Selection changed (internal IDs):', internalIds);
+    
     this.selectionHistory.push(event.fNodeIds);
-    this.flowStateService.updateSelectedNodes(event.fNodeIds);
+    this.flowStateService.updateSelectedNodes(internalIds);
+  }
+
+  /**
+   * Méthode pour obtenir l'ID Foblex Flow d'un node à partir de notre ID interne
+   * @param nodeId Notre ID interne de nœud
+   * @returns L'ID Foblex Flow correspondant ou undefined
+   */
+  getFoblexNodeId(nodeId: string): string | undefined {
+    const node = this.flowStateService.nodes().find(n => n.id === nodeId);
+    return node?.foblexId;
+  }
+  
+  /**
+   * Convertit un ID Foblex Flow en notre ID interne
+   * @param foblexId L'ID Foblex Flow
+   * @returns Notre ID interne correspondant ou undefined
+   */
+  getInternalIdFromFoblex(foblexId: string): string | undefined {
+    return this.foblexIdManager.getInternalIdFromFoblexId(foblexId);
   }
 }

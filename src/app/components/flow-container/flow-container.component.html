@@ -1,4 +1,5 @@
 <div class="absolute inset-0" 
+     #flowContainer
      (dragover)="onDragOver($event)" 
      (drop)="onDrop($event)">
   <!-- Débogage: Afficher le nombre de nœuds -->
@@ -11,10 +12,7 @@
   <f-flow #flow fDraggable
           (fSelectionChange)="onSelectionChange($event)"
           [attr.data-dragging]="flowStateService.draggingItemType() ? 'true' : 'false'"
-          (fCreateNode)="onCreateNode($event)"
           (fCreateConnection)="onCreateConnection($event)">
-          <f-selection-area></f-selection-area>
-    <f-connection-for-create fBehavior="floating"></f-connection-for-create>
     <f-canvas #canvas fZoom>
       <!-- Les nœuds permanents -->
       @for (node of flowStateService.nodes(); track node.id) {
@@ -28,6 +26,7 @@
              [fInputId]="'input_' + node.id"
              [fInputMultiple]="node.maxInputs !== 1"
              fInputConnectableSide="right"
+             [attr.data-node-id]="node.id"
              class="w-[200px] rounded-md overflow-hidden border border-gray-200 bg-white">
           <div class="p-3 flex items-center">
             <div class="w-10 h-10 flex items-center justify-center rounded-md bg-gray-100 mr-3">
@@ -69,6 +68,7 @@
         <f-connection 
           [fOutputId]="connection.sourceId" 
           [fInputId]="connection.targetId"
+          [attr.data-connection-id]="connection.id"
           fBehavior="floating">
         </f-connection>
       }

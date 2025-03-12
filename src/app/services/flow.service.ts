@@ -7,6 +7,7 @@ import { ZoomService } from './zoom.service';
 import { TemporaryNodeService } from './temporary-node.service';
 import { FlowStateService } from './flow-state.service';
 import { NodeTypeRegistry } from './node-type-registry.service';
+import { FoblexIdManagerService } from './foblex-id-manager.service';
 
 /**
  * Service responsable de l'orchestration des opérations métier du flow diagram
@@ -25,6 +26,7 @@ export class FlowService {
   private readonly temporaryNodeService = inject(TemporaryNodeService);
   private readonly flowStateService = inject(FlowStateService);
   private readonly nodeTypeRegistry = inject(NodeTypeRegistry);
+  private readonly foblexIdManager = inject(FoblexIdManagerService);
 
   // Observables pour les composants (compatibilité et facilité d'accès)
   readonly nodes$ = toObservable(this.flowStateService.nodes);
@@ -95,23 +97,95 @@ export class FlowService {
   }
 
   /**
-   * Ajoute un nouveau nœud au diagramme et sauvegarde l'état
+   * Ajoute un nœud et sauvegarde l'état pour l'historique
    * @param node Le nœud à ajouter
    */
   addNodeAndSave(node: CrmNode): void {
-    this.flowStateService.addNode(node);
-    // Sauvegarder l'état après modification
-    this.historyService.saveState();
+    console.log('Adding node:', node);
+    
+    // Déléguer l'ajout du nœud au FlowStateService
+    const addedNode = this.flowStateService.addNode(node);
+    
+    // Enregistrer l'état pour l'historique
+    if (addedNode) {
+      this.saveState('Ajout d\'un nœud');
+    }
   }
-
+  
   /**
-   * Ajoute une nouvelle connexion au diagramme et sauvegarde l'état
+   * Ajoute une connexion et sauvegarde l'état pour l'historique
    * @param connection La connexion à ajouter
    */
   addConnectionAndSave(connection: Connection): void {
-    this.flowStateService.addConnection(connection);
-    // Sauvegarder l'état après modification
-    this.historyService.saveState();
+    console.log('Adding connection:', connection);
+    
+    // Vérifier si la connexion est autorisée
+    if (!this.canConnect(connection.sourceId, connection.targetId)) {
+      console.warn('Connection not allowed between', connection.sourceId, 'and', connection.targetId);
+      return;
+    }
+    
+    // Déléguer l'ajout de la connexion au FlowStateService
+    const addedConnection = this.flowStateService.addConnection(connection);
+    
+    // Enregistrer l'état pour l'historique
+    if (addedConnection) {
+      this.saveState('Ajout d\'une connexion');
+    }
+  }
+  
+  /**
+   * Supprime un nœud et sauvegarde l'état pour l'historique
+   * @param nodeId L'ID du nœud à supprimer
+   */
+  removeNodeAndSave(nodeId: string): void {
+    console.log('Removing node:', nodeId);
+    
+    // Déléguer la suppression du nœud au FlowStateService
+    const nodeRemoved = this.flowStateService.removeNode(nodeId);
+    
+    // Enregistrer l'état pour l'historique
+    if (nodeRemoved) {
+      this.saveState('Suppression d\'un nœud');
+    }
+  }
+  
+  /**
+   * Supprime une connexion et sauvegarde l'état pour l'historique
+   * @param connectionId L'ID de la connexion à supprimer
+   */
+  removeConnectionAndSave(connectionId: string): void {
+    console.log('Removing connection:', connectionId);
+    
+    // Déléguer la suppression de la connexion au FlowStateService
+    const connectionRemoved = this.flowStateService.removeConnection(connectionId);
+    
+    // Enregistrer l'état pour l'historique
+    if (connectionRemoved) {
+      this.saveState('Suppression d\'une connexion');
+    }
+  }
+
+  /**
+   * Traite la fin d'un glisser-déposer sur un nœud temporaire
+   * @param temporaryNodeId Identifiant du nœud temporaire
+   * @param changeDetectorRef Référence au détecteur de changements
+   */
+  handleDropOnTemporaryNode(temporaryNodeId: string, changeDetectorRef: ChangeDetectorRef): void {
+    console.log('Handling drop on temporary node:', temporaryNodeId);
+    
+    // Déléguer la conversion du nœud temporaire au FlowStateService
+    const newNode = this.flowStateService.convertTemporaryNodeToPermanent(temporaryNodeId);
+    
+    if (newNode) {
+      // Sauvegarder l'historique après la création du nœud permanent
+      this.saveState(`Ajout d'un nœud ${newNode.type}`);
+      
+      // Forcer la mise à jour du composant
+      if (changeDetectorRef) {
+        changeDetectorRef.detectChanges();
+      }
+    }
   }
 
   /**
@@ -156,72 +230,38 @@ export class FlowService {
           this.historyService.clear();
           // Puis sauvegarder l'état initial
           this.historyService.saveState();
+          
+          // Informer tous les observateurs que nous avons besoin de synchroniser les IDs
+          console.log('Broadcasting ID synchronization request after default node creation');
+          this._broadcastSyncRequest();
         }, 0);
       }
     } catch (error) {
       console.error('Error creating default nodes:', error);
     }
   }
-
+  
   /**
-   * Traite la fin d'un glisser-déposer sur un nœud temporaire
-   * @param temporaryNodeId Identifiant du nœud temporaire
-   * @param changeDetectorRef Référence au détecteur de changements
+   * Émet un événement indiquant qu'une synchronisation d'ID est nécessaire
+   * Cette méthode est utilisée en interne pour informer les composants
+   * @private
    */
-  handleDropOnTemporaryNode(temporaryNodeId: string, changeDetectorRef: ChangeDetectorRef): void {
-    const dropResult = this.temporaryNodeService.handleDropOnTemporaryNode(temporaryNodeId);
-    
-    if (!dropResult) {
+  private _syncRequested = false;
+  private _broadcastSyncRequest(): void {
+    // Utiliser une protection pour éviter les boucles infinies
+    if (this._syncRequested) {
       return;
     }
     
-    const { nodeType, position, connections } = dropResult;
+    this._syncRequested = true;
     
-    // Générer un identifiant unique pour le nouveau nœud
-    const newNodeId = `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    
-    // Créer le nouveau nœud
-    const newNode: CrmNode = {
-      id: newNodeId,
-      type: nodeType,
-      text: this.nodeTypeRegistry.getDefaultText(nodeType),
-      position: position,
-      maxInputs: this.flowStateService.getDefaultMaxInputs(nodeType),
-      maxOutputs: this.flowStateService.getDefaultMaxOutputs(nodeType)
-    };
-    
-    // Ajouter le nœud
-    this.addNodeAndSave(newNode);
-    
-    // Créer les connexions
-    connections.forEach(conn => {
-      // Déterminer si le nœud créé sera la source ou la cible
-      const isNewNodeSource = conn.sourceId === '';
-      const isNewNodeTarget = conn.targetId === '';
-      
-      // Préparer les identifiants en conservant le format input_/output_
-      let source = isNewNodeSource ? `output_${newNodeId}` : conn.sourceId;
-      let target = isNewNodeTarget ? `input_${newNodeId}` : conn.targetId;
-      
-      console.log(`Creating connection: ${source} -> ${target}`);
-      
-      // Générer un identifiant unique pour la connexion
-      const connId = `conn-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      
-      // Créer et ajouter la connexion
-      const newConnection: Connection = {
-        id: connId,
-        sourceId: source,
-        targetId: target
-      };
-      
-      this.addConnectionAndSave(newConnection);
-    });
-    
-    // Forcer la mise à jour du composant
-    if (changeDetectorRef) {
-      changeDetectorRef.detectChanges();
-    }
+    // Utilisation d'une approche simple avec setTimeout
+    // Dans une application réelle, vous pourriez utiliser un Subject/Observable
+    setTimeout(() => {
+      console.log('Flow Service broadcasting ID sync request');
+      document.dispatchEvent(new CustomEvent('foblex-id-sync-required'));
+      this._syncRequested = false;
+    }, 0);
   }
 
   /**
@@ -336,5 +376,50 @@ export class FlowService {
       default:
         return '📄';
     }
+  }
+  
+  /**
+   * Trouve un nœud par son ID Foblex (f-node-X)
+   * @param foblexId L'ID Foblex Flow à rechercher
+   * @returns Le nœud correspondant ou undefined
+   */
+  findNodeByFoblexId(foblexId: string): CrmNode | undefined {
+    return this.foblexIdManager.findNodeByFoblexId(foblexId);
+  }
+  
+  /**
+   * Trouve une connexion par son ID Foblex (f-connection-X)
+   * @param foblexId L'ID Foblex Flow à rechercher
+   * @returns La connexion correspondante ou undefined
+   */
+  findConnectionByFoblexId(foblexId: string): Connection | undefined {
+    return this.foblexIdManager.findConnectionByFoblexId(foblexId);
+  }
+  
+  /**
+   * Convertit un ID Foblex en ID interne
+   * @param foblexId L'ID Foblex Flow
+   * @returns L'ID interne correspondant ou undefined
+   */
+  getInternalIdFromFoblexId(foblexId: string): string | undefined {
+    return this.foblexIdManager.getInternalIdFromFoblexId(foblexId);
+  }
+  
+  /**
+   * Convertit un ID interne en ID Foblex
+   * @param internalId L'ID interne
+   * @returns L'ID Foblex correspondant ou undefined
+   */
+  getFoblexIdFromInternalId(internalId: string): string | undefined {
+    return this.foblexIdManager.getFoblexIdFromInternalId(internalId);
+  }
+
+  /**
+   * Sauvegarder l'état pour l'historique
+   * @param actionDescription Description de l'action effectuée
+   */
+  private saveState(actionDescription: string): void {
+    this.historyService.saveState();
+    console.log(`État sauvegardé - ${actionDescription}`);
   }
 } 
