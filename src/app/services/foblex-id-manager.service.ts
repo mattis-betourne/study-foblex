@@ -19,38 +19,24 @@ export class FoblexIdManagerService {
    * Synchronise un nœud avec son équivalent Foblex Flow
    * @param node Le nœud à synchroniser
    * @param foblexId L'ID Foblex (f-node-X)
-   * @param fInputId L'ID du point d'entrée (input_X)
-   * @param fOutputId L'ID du point de sortie (output_X)
    */
   syncNodeIds(
     node: CrmNode,
-    foblexId: string,
-    fInputId?: string,
-    fOutputId?: string
+    foblexId: string
   ): void {
     // Vérifier si l'ID a changé pour éviter les mises à jour inutiles
-    if (node.foblexId === foblexId && 
-        node.fInputId === (fInputId || node.fInputId) && 
-        node.fOutputId === (fOutputId || node.fOutputId)) {
+    if (node.foblexId === foblexId) {
       console.log(`Node ${node.id} already synchronized with Foblex ID ${foblexId}, skipping update`);
       return;
     }
     
-    // Mettre à jour les propriétés du nœud actuel
+    // Mettre à jour la propriété du nœud actuel
     node.foblexId = foblexId;
-    
-    if (fInputId) {
-      node.fInputId = fInputId;
-    }
-    
-    if (fOutputId) {
-      node.fOutputId = fOutputId;
-    }
 
     // Mettre à jour le nœud dans l'état en conservant la référence
     const nodes = this.flowStateService.nodes().map(n => {
       if (n.id === node.id) {
-        return { ...n, foblexId, fInputId: fInputId || n.fInputId, fOutputId: fOutputId || n.fOutputId };
+        return { ...n, foblexId };
       }
       return n;
     });
@@ -119,24 +105,6 @@ export class FoblexIdManagerService {
    */
   getNodeFoblexIdFromElement(element: HTMLElement): string | null {
     return element.getAttribute('data-f-node-id');
-  }
-
-  /**
-   * Récupère l'ID d'entrée Foblex Flow d'un nœud à partir de son élément DOM
-   * @param element L'élément DOM du nœud
-   * @returns L'ID d'entrée Foblex Flow ou null si non trouvé
-   */
-  getNodeInputIdFromElement(element: HTMLElement): string | null {
-    return element.getAttribute('data-f-input-id');
-  }
-
-  /**
-   * Récupère l'ID de sortie Foblex Flow d'un nœud à partir de son élément DOM
-   * @param element L'élément DOM du nœud
-   * @returns L'ID de sortie Foblex Flow ou null si non trouvé
-   */
-  getNodeOutputIdFromElement(element: HTMLElement): string | null {
-    return element.getAttribute('data-f-output-id');
   }
 
   /**

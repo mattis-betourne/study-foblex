@@ -16,10 +16,6 @@ export interface CrmNode {
   maxOutputs?: number;
   /** Identifiant généré par Foblex Flow (f-node-X) */
   foblexId?: string;
-  /** ID du fInput associé */
-  fInputId?: string;
-  /** ID du fOutput associé */
-  fOutputId?: string;
 }
 
 /**

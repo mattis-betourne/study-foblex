@@ -309,8 +309,6 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       
       // Récupérer les IDs Foblex
       const foblexId = this.foblexIdManager.getNodeFoblexIdFromElement(nodeElement);
-      const fInputId = this.foblexIdManager.getNodeInputIdFromElement(nodeElement);
-      const fOutputId = this.foblexIdManager.getNodeOutputIdFromElement(nodeElement);
       const dataNodeId = nodeElement.getAttribute('data-node-id');
       
       console.log(`Node Element ${index}: foblexId=${foblexId}, dataNodeId=${dataNodeId}`);
@@ -321,7 +319,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
           const node = this.flowStateService.nodes().find(n => n.id === dataNodeId);
           if (node) {
             console.log(`Synchronizing node ${node.id} with Foblex ID ${foblexId}`);
-            this.foblexIdManager.syncNodeIds(node, foblexId, fInputId || undefined, fOutputId || undefined);
+            this.foblexIdManager.syncNodeIds(node, foblexId);
           } else {
             console.warn(`Could not find node with id ${dataNodeId} in our state`);
           }
@@ -344,7 +342,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
             
             if (matchingNode) {
               console.log(`Found node by position match: ${matchingNode.id} at (${x}, ${y})`);
-              this.foblexIdManager.syncNodeIds(matchingNode, foblexId, fInputId || undefined, fOutputId || undefined);
+              this.foblexIdManager.syncNodeIds(matchingNode, foblexId);
             }
           }
         }
@@ -792,9 +790,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
                 console.log(`Found node by position match: ${matchingNode.id} at (${x}, ${y}), will sync with Foblex ID ${foblexId}`);
                 this.foblexIdManager.syncNodeIds(
                   matchingNode, 
-                  foblexId, 
-                  nodeElement.getAttribute('data-f-input-id') || undefined,
-                  nodeElement.getAttribute('data-f-output-id') || undefined
+                  foblexId
                 );
               }
             }
