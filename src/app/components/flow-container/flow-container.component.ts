@@ -166,12 +166,6 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    */
   @HostListener('window:keydown', ['$event'])
   onKeyDown(event: KeyboardEvent): void {
-    // Si la touche Escape est pressée pendant un drag, nettoyer les nœuds temporaires
-    if (event.key === 'Escape' && this.flowStateService.draggingItemType()) {
-      console.log('Escape key pressed during drag, cleaning up');
-      this.blockAndCleanUnauthorizedDrop();
-    }
-    
     // Si la touche Delete/Suppr est pressée et exactement un nœud est sélectionné
     if ((event.key === 'Delete' || event.key === 'Del' || event.keyCode === 46) && 
         !this.flowStateService.draggingItemType()) {
