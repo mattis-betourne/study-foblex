@@ -50,7 +50,6 @@
              [fInputMultiple]="node.maxInputs !== 1"
              fInputConnectableSide="right"
              class="w-[200px] rounded-md overflow-hidden bg-white border-2 border-gray-200 border-dashed cursor-pointer temporary-node hover:border-green-400 transition-all"
-             [attr.data-node-id]="node.id"
              appTemporaryNode
              [nodeId]="node.id"
              (dropOnNode)="onDropOnTemporaryNode($event)">

@@ -320,8 +320,8 @@ export class MultiSplitStrategy implements CentralizedTemporaryNodeStrategy {
   ): number {
     let createdNodesCount = 0;
     
-    // Pour un MultiSplit, le nombre de sorties peut être illimité
-    const canAcceptMoreOutputs = true;
+    // Pour un MultiSplit, autoriser l'ajout de connections si moins de 5 sorties
+    const canAcceptMoreOutputs = existingOutputConnections.length < 5;
     const canAcceptMoreInputs = existingInputConnections.length < 1;
     
     // Vérifier si le nœud du type dragué peut avoir des entrées
@@ -329,68 +329,87 @@ export class MultiSplitStrategy implements CentralizedTemporaryNodeStrategy {
     
     if (canAcceptMoreOutputs && newNodeCanHaveInputs) {
       // Pour le MultiSplit, positionner les nœuds en éventail à droite
-      // Obtenir les positions des connexions existantes
-      const connectedNodePositions = existingOutputConnections
-        .map(conn => {
-          const targetNodeId = conn.targetId.replace('input_', '');
-          return this.findConnectedNode(targetNodeId);
-        })
-        .filter((n): n is CrmNode => n !== undefined)
-        .map(n => n.position.y);
-      
-      // Créer un nœud temporaire à droite, trouver un espace libre
       const horizontalOffset = 350;
+      const verticalOffsetStep = 100;
       
-      // Calculer la position Y optimale (éviter les nœuds existants)
-      let optimalY = node.position.y;
-      const minSpace = 150; // Espace minimum entre les nœuds
+      // Créer 5 positions en éventail
+      const positions = [
+        { // Position centrale
+          x: node.position.x + horizontalOffset,
+          y: node.position.y
+        },
+        { // Position légèrement en haut
+          x: node.position.x + horizontalOffset,
+          y: node.position.y - verticalOffsetStep
+        },
+        { // Position légèrement en bas
+          x: node.position.x + horizontalOffset,
+          y: node.position.y + verticalOffsetStep
+        },
+        { // Position plus haut
+          x: node.position.x + horizontalOffset,
+          y: node.position.y - (verticalOffsetStep * 2)
+        },
+        { // Position plus bas
+          x: node.position.x + horizontalOffset,
+          y: node.position.y + (verticalOffsetStep * 2)
+        }
+      ];
       
-      // Si la position par défaut est trop proche d'un nœud existant,
-      // chercher une position plus libre
-      if (connectedNodePositions.some(y => Math.abs(y - optimalY) < minSpace)) {
-        // Essayer des positions vers le haut et vers le bas jusqu'à trouver un espace
-        for (let offset = minSpace; offset <= 500; offset += minSpace) {
-          // Essayer au-dessus
-          const topY = node.position.y - offset;
-          if (!connectedNodePositions.some(y => Math.abs(y - topY) < minSpace)) {
-            optimalY = topY;
-            break;
-          }
+      // Filtrer les positions déjà occupées par des connexions existantes
+      const usedPositionIndices = new Set<number>();
+      for (const conn of existingOutputConnections) {
+        // Trouver le nœud cible connecté
+        const targetNodeId = conn.targetId.replace('input_', '');
+        const targetNode = this.findConnectedNode(targetNodeId);
+        
+        if (targetNode) {
+          // Déterminer quelle position est la plus proche de ce nœud
+          let closestIndex = 0;
+          let minDistance = Number.MAX_VALUE;
           
-          // Essayer en-dessous
-          const bottomY = node.position.y + offset;
-          if (!connectedNodePositions.some(y => Math.abs(y - bottomY) < minSpace)) {
-            optimalY = bottomY;
-            break;
-          }
+          positions.forEach((pos, index) => {
+            const distance = Math.abs(targetNode.position.y - pos.y);
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestIndex = index;
+            }
+          });
+          
+          usedPositionIndices.add(closestIndex);
         }
       }
       
-      const multiSplitNodePosition = {
-        x: node.position.x + horizontalOffset,
-        y: optimalY
-      };
-      
-      // Vérifier que les positions ne se superposent pas
-      if (flowStateService.isPositionFree(multiSplitNodePosition)) {
-        // Créer le nœud temporaire via le service centralisé
-        const multiSplitTempNode = flowStateService.createTemporaryNode({
-          id: generateGuid(),
-          type: itemType,
-          text: `${itemType} (Nouvelle branche)`,
-          position: multiSplitNodePosition,
-          maxInputs: flowStateService.getDefaultMaxInputs(itemType),
-          maxOutputs: flowStateService.getDefaultMaxOutputs(itemType)
-        });
-        
-        // Créer une connexion temporaire via le service centralisé
-        flowStateService.createTemporaryConnection({
-          id: generateGuid(),
-          sourceId: `output_${node.id}`,
-          targetId: `input_${multiSplitTempNode.id}`
-        });
-        
-        createdNodesCount++;
+      // Créer des nœuds temporaires pour les positions disponibles
+      for (let i = 0; i < positions.length; i++) {
+        if (!usedPositionIndices.has(i) && flowStateService.isPositionFree(positions[i])) {
+          // Obtenir un texte approprié pour la position
+          let branchText;
+          if (i === 0) branchText = "centrale";
+          else if (i === 1) branchText = "supérieure";
+          else if (i === 2) branchText = "inférieure";
+          else if (i === 3) branchText = "haute";
+          else branchText = "basse";
+          
+          // Créer le nœud temporaire via le service centralisé
+          const multiSplitTempNode = flowStateService.createTemporaryNode({
+            id: generateGuid(),
+            type: itemType,
+            text: `${itemType} (Branche ${branchText})`,
+            position: positions[i],
+            maxInputs: flowStateService.getDefaultMaxInputs(itemType),
+            maxOutputs: flowStateService.getDefaultMaxOutputs(itemType)
+          });
+          
+          // Créer une connexion temporaire via le service centralisé
+          flowStateService.createTemporaryConnection({
+            id: generateGuid(),
+            sourceId: `output_${node.id}`,
+            targetId: `input_${multiSplitTempNode.id}`
+          });
+          
+          createdNodesCount++;
+        }
       }
     }
     

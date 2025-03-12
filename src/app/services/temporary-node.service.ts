@@ -1,5 +1,4 @@
 import { Injectable, inject } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
 import { CrmNode, Connection } from '../models/crm.models';
 import { TemporaryNodeStrategyFactory } from '../strategies/temporary-node-strategies';
 import { FlowStateService } from './flow-state.service';
@@ -17,26 +16,6 @@ export class TemporaryNodeService {
    * @private
    */
   private readonly flowStateService = inject(FlowStateService);
-
-  /**
-   * Observable des nœuds temporaires
-   */
-  readonly temporaryNodes$ = toObservable(this.flowStateService.temporaryNodes);
-  
-  /**
-   * Observable des connexions temporaires
-   */
-  readonly temporaryConnections$ = toObservable(this.flowStateService.temporaryConnections);
-  
-  /**
-   * Observable du type d'élément en cours de glisser-déposer
-   */
-  readonly draggingItemType$ = toObservable(this.flowStateService.draggingItemType);
-  
-  /**
-   * Observable indiquant si un nœud est en cours de création
-   */
-  readonly isCreatingNode$ = toObservable(this.flowStateService.isCreatingNode);
 
   /**
    * Factory pour les stratégies de création de nœuds temporaires

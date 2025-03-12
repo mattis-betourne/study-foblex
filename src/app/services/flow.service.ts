@@ -1,12 +1,10 @@
-import { Injectable, ChangeDetectorRef, inject, DestroyRef } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
+import { Injectable, ChangeDetectorRef, inject } from '@angular/core';
 import { generateGuid } from '@foblex/utils';
 import { CrmNode, Connection } from '../models/crm.models';
 import { HistoryService } from './history.service';
 import { ZoomService } from './zoom.service';
 import { TemporaryNodeService } from './temporary-node.service';
 import { FlowStateService } from './flow-state.service';
-import { NodeTypeRegistry } from './node-type-registry.service';
 import { FoblexIdManagerService } from './foblex-id-manager.service';
 
 /**
@@ -25,16 +23,7 @@ export class FlowService {
   private readonly zoomService = inject(ZoomService);
   private readonly temporaryNodeService = inject(TemporaryNodeService);
   private readonly flowStateService = inject(FlowStateService);
-  private readonly nodeTypeRegistry = inject(NodeTypeRegistry);
   private readonly foblexIdManager = inject(FoblexIdManagerService);
-
-  // Observables pour les composants (compatibilité et facilité d'accès)
-  readonly nodes$ = toObservable(this.flowStateService.nodes);
-  readonly connections$ = toObservable(this.flowStateService.connections);
-  readonly temporaryNodes$ = toObservable(this.flowStateService.temporaryNodes);
-  readonly temporaryConnections$ = toObservable(this.flowStateService.temporaryConnections);
-  readonly draggingItemType$ = toObservable(this.flowStateService.draggingItemType);
-  readonly isCreatingNode$ = toObservable(this.flowStateService.isCreatingNode);
 
   constructor() {
     console.log('FlowService initialized');
@@ -185,6 +174,9 @@ export class FlowService {
       if (changeDetectorRef) {
         changeDetectorRef.detectChanges();
       }
+      
+      // Demander une synchronisation des IDs
+      this.foblexIdManager.requestSync();
     }
   }
 
@@ -211,16 +203,10 @@ export class FlowService {
         maxOutputs: 1  // 1 sortie maximum
       };
       
-      // Log pour déboguer
-      console.log('Node to be added:', JSON.stringify([audienceNode]));
-      
       // Mise à jour des nœuds
       this.flowStateService.updateNodes([audienceNode]);
       
-      // Vérification après mise à jour
-      console.log('Nodes after update:', JSON.stringify(this.flowStateService.nodes()));
-      
-      console.log('Default node created successfully:', [audienceNode]);
+      console.log('Default node created successfully');
       
       // Sauvegarder l'état APRÈS création des nœuds par défaut
       // et s'assurer que c'est le premier état dans l'historique
@@ -231,9 +217,8 @@ export class FlowService {
           // Puis sauvegarder l'état initial
           this.historyService.saveState();
           
-          // Informer tous les observateurs que nous avons besoin de synchroniser les IDs
-          console.log('Broadcasting ID synchronization request after default node creation');
-          this._broadcastSyncRequest();
+          // Demander une synchronisation des IDs
+          this.foblexIdManager.requestSync();
         }, 0);
       }
     } catch (error) {
@@ -241,29 +226,6 @@ export class FlowService {
     }
   }
   
-  /**
-   * Émet un événement indiquant qu'une synchronisation d'ID est nécessaire
-   * Cette méthode est utilisée en interne pour informer les composants
-   * @private
-   */
-  private _syncRequested = false;
-  private _broadcastSyncRequest(): void {
-    // Utiliser une protection pour éviter les boucles infinies
-    if (this._syncRequested) {
-      return;
-    }
-    
-    this._syncRequested = true;
-    
-    // Utilisation d'une approche simple avec setTimeout
-    // Dans une application réelle, vous pourriez utiliser un Subject/Observable
-    setTimeout(() => {
-      console.log('Flow Service broadcasting ID sync request');
-      document.dispatchEvent(new CustomEvent('foblex-id-sync-required'));
-      this._syncRequested = false;
-    }, 0);
-  }
-
   /**
    * Annule la dernière action
    */
@@ -376,42 +338,6 @@ export class FlowService {
       default:
         return '📄';
     }
-  }
-  
-  /**
-   * Trouve un nœud par son ID Foblex (f-node-X)
-   * @param foblexId L'ID Foblex Flow à rechercher
-   * @returns Le nœud correspondant ou undefined
-   */
-  findNodeByFoblexId(foblexId: string): CrmNode | undefined {
-    return this.foblexIdManager.findNodeByFoblexId(foblexId);
-  }
-  
-  /**
-   * Trouve une connexion par son ID Foblex (f-connection-X)
-   * @param foblexId L'ID Foblex Flow à rechercher
-   * @returns La connexion correspondante ou undefined
-   */
-  findConnectionByFoblexId(foblexId: string): Connection | undefined {
-    return this.foblexIdManager.findConnectionByFoblexId(foblexId);
-  }
-  
-  /**
-   * Convertit un ID Foblex en ID interne
-   * @param foblexId L'ID Foblex Flow
-   * @returns L'ID interne correspondant ou undefined
-   */
-  getInternalIdFromFoblexId(foblexId: string): string | undefined {
-    return this.foblexIdManager.getInternalIdFromFoblexId(foblexId);
-  }
-  
-  /**
-   * Convertit un ID interne en ID Foblex
-   * @param internalId L'ID interne
-   * @returns L'ID Foblex correspondant ou undefined
-   */
-  getFoblexIdFromInternalId(internalId: string): string | undefined {
-    return this.foblexIdManager.getFoblexIdFromInternalId(internalId);
   }
 
   /**

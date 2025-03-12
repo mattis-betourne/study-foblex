@@ -1,4 +1,4 @@
-import { Injectable, NgZone } from '@angular/core';
+import { Injectable, NgZone, inject, DestroyRef, effect, signal } from '@angular/core';
 import { FlowStateService } from './flow-state.service';
 import { CrmNode, Connection } from '../models/crm.models';
 
@@ -10,23 +10,196 @@ import { CrmNode, Connection } from '../models/crm.models';
   providedIn: 'root'
 })
 export class FoblexIdManagerService {
-  constructor(
-    private flowStateService: FlowStateService,
-    private ngZone: NgZone
-  ) {}
+  private readonly flowStateService = inject(FlowStateService);
+  private readonly ngZone = inject(NgZone);
+  
+  /** Signal indiquant si une synchronisation est en cours */
+  private readonly _isSynchronizing = signal(false);
+  
+  /** Signal pour déclencher une synchronisation */
+  private readonly _syncRequested = signal(false);
+  
+  /** Compteur de requêtes de synchronisation pour éviter les doublons */
+  private _syncRequestCounter = 0;
+  
+  /** Timestamp de la dernière synchronisation */
+  private _lastSyncTime = 0;
+  
+  /** Délai minimum entre deux synchronisations (ms) */
+  private readonly _syncDebounceTime = 300;
+  
+  /** Compteur de nœuds et connexions synchronisés lors de la dernière opération */
+  private readonly _syncStats = signal<{
+    nodesTotal: number;
+    nodesSynced: number;
+    connectionsTotal: number;
+    connectionsSynced: number;
+  }>({
+    nodesTotal: 0,
+    nodesSynced: 0,
+    connectionsTotal: 0,
+    connectionsSynced: 0
+  });
+  
+  /** Statistiques de synchronisation publiques en lecture seule */
+  readonly syncStats = this._syncStats.asReadonly();
+  
+  constructor() {
+    // Créer un effet qui réagit aux changements de _syncRequested
+    effect(() => {
+      // Ne déclencher que si _syncRequested est true et qu'une synchronisation n'est pas déjà en cours
+      if (this._syncRequested() && !this._isSynchronizing()) {
+        const now = Date.now();
+        // Vérifier si suffisamment de temps s'est écoulé depuis la dernière synchronisation
+        if (now - this._lastSyncTime > this._syncDebounceTime) {
+          this._lastSyncTime = now;
+          // Réinitialiser le signal pour permettre de futurs déclenchements
+          this._syncRequested.set(false);
+          // Effectuer la synchronisation
+          this.performSync();
+        } else {
+          // Si pas assez de temps s'est écoulé, réinitialiser quand même le signal
+          // mais programmer une synchronisation différée
+          this._syncRequested.set(false);
+          setTimeout(() => {
+            if (!this._isSynchronizing()) {
+              this.requestSync();
+            }
+          }, this._syncDebounceTime);
+        }
+      }
+    });
+  }
+  
+  /**
+   * Demande une synchronisation des IDs Foblex
+   * Cette méthode peut être appelée depuis n'importe quel service/composant
+   */
+  requestSync(): void {
+    // Incrémenter le compteur et activer le signal
+    this._syncRequestCounter++;
+    this._syncRequested.set(true);
+  }
+  
+  /**
+   * Effectue la synchronisation des IDs entre les modèles internes et Foblex
+   * @param container Élément DOM contenant les nœuds et connexions (optionnel)
+   */
+  performSync(container?: HTMLElement): void {
+    // Si une synchronisation est déjà en cours, abandonner
+    if (this._isSynchronizing()) {
+      return;
+    }
+    
+    const state = this.flowStateService.state();
+    
+    // Vérifier si une synchronisation est nécessaire
+    const unsyncedNodesCount = state.nodes.filter(n => !n.foblexId).length;
+    const unsyncedConnectionsCount = state.connections.filter(c => !c.foblexId).length;
+    
+    if (unsyncedNodesCount === 0 && unsyncedConnectionsCount === 0 && 
+        state.nodes.length > 0) {
+      return;
+    }
+    
+    // Activer le flag de synchronisation
+    this._isSynchronizing.set(true);
+    
+    try {
+      // Si aucun conteneur n'est fourni, utiliser le document entier
+      const rootElement = container || document;
+      
+      // Synchroniser les nœuds
+      this.syncNodes(rootElement);
+      
+      // Synchroniser les connexions
+      this.syncConnections(rootElement);
+      
+      // Mettre à jour les statistiques
+      this._syncStats.set({
+        nodesTotal: state.nodes.length,
+        nodesSynced: state.nodes.filter(n => !!n.foblexId).length,
+        connectionsTotal: state.connections.length,
+        connectionsSynced: state.connections.filter(c => !!c.foblexId).length
+      });
+    } catch (error) {
+      console.error('Error during ID synchronization:', error);
+    } finally {
+      // Désactiver le flag de synchronisation après un court délai
+      setTimeout(() => {
+        this._isSynchronizing.set(false);
+      }, 100);
+    }
+  }
+  
+  /**
+   * Synchronise les IDs des nœuds
+   * @param container Élément DOM contenant les nœuds
+   * @private
+   */
+  private syncNodes(container: HTMLElement | Document): void {
+    const nodeElements = container.querySelectorAll('[fnode]');
+    
+    for (const element of Array.from(nodeElements)) {
+      const nodeElement = element as HTMLElement;
+      
+      // Ignorer les nœuds temporaires
+      if (nodeElement.classList.contains('temporary-node')) {
+        continue;
+      }
+      
+      // Récupérer l'ID Foblex et l'ID de nœud interne
+      const foblexId = this.getNodeFoblexIdFromElement(nodeElement);
+      const dataNodeId = nodeElement.getAttribute('data-node-id');
+      
+      if (foblexId && dataNodeId) {
+        const node = this.flowStateService.nodes().find(n => n.id === dataNodeId);
+        if (node && node.foblexId !== foblexId) {
+          this.syncNodeIds(node, foblexId);
+        }
+      }
+    }
+  }
+  
+  /**
+   * Synchronise les IDs des connexions
+   * @param container Élément DOM contenant les connexions
+   * @private
+   */
+  private syncConnections(container: HTMLElement | Document): void {
+    const connectionElements = container.querySelectorAll('f-connection');
+    
+    for (const element of Array.from(connectionElements)) {
+      const connectionElement = element as HTMLElement;
+      
+      // Ignorer les connexions temporaires
+      if (connectionElement.classList.contains('temporary-connection')) {
+        continue;
+      }
+      
+      // Récupérer l'ID Foblex
+      const foblexId = this.getConnectionFoblexIdFromElement(connectionElement);
+      
+      // Récupérer l'ID de la connexion
+      const dataConnectionId = connectionElement.getAttribute('data-connection-id');
+      
+      if (foblexId && dataConnectionId) {
+        const connection = this.flowStateService.connections().find(c => c.id === dataConnectionId);
+        if (connection && connection.foblexId !== foblexId) {
+          this.syncConnectionIds(connection, foblexId);
+        }
+      }
+    }
+  }
 
   /**
    * Synchronise un nœud avec son équivalent Foblex Flow
    * @param node Le nœud à synchroniser
    * @param foblexId L'ID Foblex (f-node-X)
    */
-  syncNodeIds(
-    node: CrmNode,
-    foblexId: string
-  ): void {
+  syncNodeIds(node: CrmNode, foblexId: string): void {
     // Vérifier si l'ID a changé pour éviter les mises à jour inutiles
     if (node.foblexId === foblexId) {
-      console.log(`Node ${node.id} already synchronized with Foblex ID ${foblexId}, skipping update`);
       return;
     }
     
@@ -45,8 +218,6 @@ export class FoblexIdManagerService {
     this.ngZone.run(() => {
       this.flowStateService.updateNodes(nodes);
     });
-
-    console.log(`Node ${node.id} synchronized with Foblex ID ${foblexId}`);
   }
 
   /**
@@ -57,7 +228,6 @@ export class FoblexIdManagerService {
   syncConnectionIds(connection: Connection, foblexId: string): void {
     // Vérifier si l'ID a changé pour éviter les mises à jour inutiles
     if (connection.foblexId === foblexId) {
-      console.log(`Connection ${connection.id} already synchronized with Foblex ID ${foblexId}, skipping update`);
       return;
     }
     
@@ -76,8 +246,6 @@ export class FoblexIdManagerService {
     this.ngZone.run(() => {
       this.flowStateService.updateConnections(connections);
     });
-
-    console.log(`Connection ${connection.id} synchronized with Foblex ID ${foblexId}`);
   }
 
   /**

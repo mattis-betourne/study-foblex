@@ -1,5 +1,4 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
 import { FlowStateService } from './flow-state.service';
 
 /**
@@ -35,29 +34,14 @@ export class ZoomService {
   private readonly _maxZoom = 2;
 
   /**
-   * Observable du niveau de zoom
-   */
-  readonly zoomLevel$ = toObservable(this.flowStateService.zoomLevel);
-
-  /**
-   * Valeur calculée indiquant si le zoom peut être augmenté
+   * Signal calculé indiquant si le zoom peut être augmenté
    */
   readonly canZoomIn = computed(() => this.flowStateService.zoomLevel() < this._maxZoom);
 
   /**
-   * Valeur calculée indiquant si le zoom peut être diminué
+   * Signal calculé indiquant si le zoom peut être diminué
    */
   readonly canZoomOut = computed(() => this.flowStateService.zoomLevel() > this._minZoom);
-
-  /**
-   * Observable indiquant si le zoom peut être augmenté
-   */
-  readonly canZoomIn$ = toObservable(this.canZoomIn);
-
-  /**
-   * Observable indiquant si le zoom peut être diminué
-   */
-  readonly canZoomOut$ = toObservable(this.canZoomOut);
 
   constructor() {}
 
