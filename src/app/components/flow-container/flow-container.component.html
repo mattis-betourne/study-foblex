@@ -9,15 +9,17 @@
   }
   
   <f-flow #flow fDraggable
+          (fSelectionChange)="onSelectionChange($event)"
           [attr.data-dragging]="flowStateService.draggingItemType() ? 'true' : 'false'"
           (fCreateNode)="onCreateNode($event)"
           (fCreateConnection)="onCreateConnection($event)">
+          <f-selection-area></f-selection-area>
     <f-connection-for-create fBehavior="floating"></f-connection-for-create>
     <f-canvas #canvas fZoom>
       <!-- Les nœuds permanents -->
       @for (node of flowStateService.nodes(); track node.id) {
         <div fNode 
-             [fNodePosition]="node.position || {x: 0, y: 0}" 
+             [fNodePosition]="node.position || {x: 0, y: 0}"
              fNodeOutput 
              [fOutputId]="'output_' + node.id" 
              [fOutputMultiple]="node.maxOutputs !== 1"
@@ -90,4 +92,4 @@
   
   <!-- Toolbar flottante -->
   <app-flow-toolbar></app-flow-toolbar>
-</div> 
+</div>

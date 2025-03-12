@@ -1,25 +1,24 @@
-import { 
-  Component, 
-  ViewChild, 
-  AfterViewInit, 
+import { CommonModule } from '@angular/common';
+import {
+  AfterViewInit,
   ChangeDetectionStrategy,
   ChangeDetectorRef,
-  HostListener, 
-  OnInit, 
-  OnDestroy, 
-  inject,
-  DestroyRef
+  Component,
+  DestroyRef,
+  HostListener,
+  OnInit,
+  ViewChild,
+  inject
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { CommonModule } from '@angular/common';
-import { FFlowModule, FCanvasComponent, FZoomDirective } from '@foblex/flow';
-import { FlowService } from '../../services/flow.service';
+import { FCanvasComponent, FFlowModule, FSelectionChangeEvent, FZoomDirective } from '@foblex/flow';
 import { TemporaryNodeDirective } from '../../directives/temporary-node.directive';
-import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
 import { Connection, CrmNode } from '../../models/crm.models';
-import { ZoomService } from '../../services/zoom.service';
-import { TemporaryNodeService } from '../../services/temporary-node.service';
 import { FlowStateService } from '../../services/flow-state.service';
+import { FlowService } from '../../services/flow.service';
+import { TemporaryNodeService } from '../../services/temporary-node.service';
+import { ZoomService } from '../../services/zoom.service';
+import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
 
 /**
  * Composant qui encapsule le flow diagram
@@ -524,4 +523,18 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     const index = targetNodes.findIndex(node => node.id === currentTarget.id);
     return index >= 0 ? index + 1 : undefined;
   }
-} 
+
+  /**
+   * Liste des sélections successives pour le débogage
+   */
+  selectionHistory: string[][] = [];
+  
+  /**
+   * Gestionnaire de changement de sélection
+   */
+  onSelectionChange(event: FSelectionChangeEvent): void {
+    console.log('Selection changed:', event.fNodeIds);
+    this.selectionHistory.push(event.fNodeIds);
+    this.flowStateService.updateSelectedNodes(event.fNodeIds);
+  }
+}

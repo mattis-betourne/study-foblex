@@ -1,5 +1,5 @@
-import { Injectable, signal, computed } from '@angular/core';
-import { CrmNode, Connection } from '../models/crm.models';
+import { computed, Injectable, signal } from '@angular/core';
+import { Connection, CrmNode } from '../models/crm.models';
 
 /**
  * Interface représentant l'état du flow
@@ -17,8 +17,7 @@ export interface FlowState {
     draggingItemType: string | null;
     isCreatingNode: boolean;
   };
-  selectedNodeId: string | null;
-  selectedConnectionId: string | null;
+  selectedNodes: string[];
 }
 
 /**
@@ -46,8 +45,7 @@ export class FlowStateService {
       draggingItemType: null,
       isCreatingNode: false
     },
-    selectedNodeId: null,
-    selectedConnectionId: null
+    selectedNodes: []
   });
 
   /**
@@ -96,14 +94,9 @@ export class FlowStateService {
   readonly isCreatingNode = computed(() => this._state().temporaryElements.isCreatingNode);
 
   /**
-   * ID du nœud sélectionné en lecture seule
+   * Nœuds sélectionnés en lecture seule
    */
-  readonly selectedNodeId = computed(() => this._state().selectedNodeId);
-
-  /**
-   * ID de la connexion sélectionnée en lecture seule
-   */
-  readonly selectedConnectionId = computed(() => this._state().selectedConnectionId);
+  readonly selectedNodes = computed(() => this._state().selectedNodes);
 
   /**
    * Met à jour l'état complet du flow
@@ -115,8 +108,7 @@ export class FlowStateService {
       connections: structuredClone(state.connections),
       zoom: structuredClone(state.zoom),
       temporaryElements: structuredClone(state.temporaryElements),
-      selectedNodeId: state.selectedNodeId,
-      selectedConnectionId: state.selectedConnectionId
+      selectedNodes: state.selectedNodes
     });
   }
 
@@ -236,24 +228,13 @@ export class FlowStateService {
   }
 
   /**
-   * Met à jour l'ID du nœud sélectionné
-   * @param id Nouvel ID
+   * Met à jour les nœuds sélectionnés
+   * @param nodeIds IDs des nœuds sélectionnés
    */
-  updateSelectedNodeId(id: string | null): void {
+  updateSelectedNodes(nodeIds: string[]): void {
     this._state.update(state => ({
       ...state,
-      selectedNodeId: id
-    }));
-  }
-
-  /**
-   * Met à jour l'ID de la connexion sélectionnée
-   * @param id Nouvel ID
-   */
-  updateSelectedConnectionId(id: string | null): void {
-    this._state.update(state => ({
-      ...state,
-      selectedConnectionId: id
+      selectedNodes: nodeIds
     }));
   }
 
@@ -376,4 +357,4 @@ export class FlowStateService {
   getConnectionsTo(nodeId: string): Connection[] {
     return this.connections().filter(conn => conn.targetId === nodeId);
   }
-} 
+}

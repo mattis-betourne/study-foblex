@@ -33,8 +33,6 @@ export class FlowService {
   readonly temporaryConnections$ = toObservable(this.flowStateService.temporaryConnections);
   readonly draggingItemType$ = toObservable(this.flowStateService.draggingItemType);
   readonly isCreatingNode$ = toObservable(this.flowStateService.isCreatingNode);
-  readonly selectedNodeId$ = toObservable(this.flowStateService.selectedNodeId);
-  readonly selectedConnectionId$ = toObservable(this.flowStateService.selectedConnectionId);
 
   constructor() {
     console.log('FlowService initialized');
