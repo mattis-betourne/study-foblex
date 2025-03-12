@@ -251,6 +251,7 @@ export class FlowService {
   canConnect(source: string, target: string): boolean {
     // Vérifier que les arguments sont valides
     if (!source || !target) {
+      console.log('Source or target is invalid');
       return false;
     }
 
@@ -262,6 +263,7 @@ export class FlowService {
     const targetNode = this.flowStateService.nodes().find((node: CrmNode) => node.id === targetNodeId);
 
     if (!sourceNode || !targetNode) {
+      console.log('Source or target node not found');
       return false;
     }
 
@@ -272,6 +274,17 @@ export class FlowService {
 
     // Les connexions ne sont possibles que d'un output vers un input
     if (!isSourceOutput || !isTargetInput) {
+      console.log('Source must be an output and target must be an input');
+      return false;
+    }
+
+    // Vérifier si une connexion existe déjà entre ces deux ports
+    const connectionExists = this.flowStateService.connections().some(
+      (conn: Connection) => conn.sourceId === source && conn.targetId === target
+    );
+
+    if (connectionExists) {
+      console.log('Connection already exists');
       return false;
     }
 
@@ -282,21 +295,14 @@ export class FlowService {
     // Vérifier les limites pour les sorties
     if (sourceNode.maxOutputs !== undefined && sourceNode.maxOutputs !== -1 && 
         existingOutputs.length >= sourceNode.maxOutputs) {
+      console.log(`Source node has reached its maximum outputs: ${existingOutputs.length}/${sourceNode.maxOutputs}`);
       return false;
     }
 
     // Vérifier les limites pour les entrées
     if (targetNode.maxInputs !== undefined && targetNode.maxInputs !== -1 && 
         existingInputs.length >= targetNode.maxInputs) {
-      return false;
-    }
-
-    // Vérifier si une connexion existe déjà entre ces deux ports
-    const connectionExists = this.flowStateService.connections().some(
-      (conn: Connection) => conn.sourceId === source && conn.targetId === target
-    );
-
-    if (connectionExists) {
+      console.log(`Target node has reached its maximum inputs: ${existingInputs.length}/${targetNode.maxInputs}`);
       return false;
     }
 
@@ -347,5 +353,188 @@ export class FlowService {
   private saveState(actionDescription: string): void {
     this.historyService.saveState();
     console.log(`État sauvegardé - ${actionDescription}`);
+  }
+
+  /**
+   * Supprime intelligemment un nœud et gère ses connexions
+   * Si le nœud est au milieu d'un flux, connecte automatiquement les nœuds précédents
+   * aux nœuds suivants pour maintenir la continuité
+   * Pour les BinarySplit et MultiSplit, supprime tous les nœuds et connecteurs successifs
+   * @param nodeId L'ID du nœud à supprimer
+   */
+  smartDelete(nodeId: string): void {
+    console.log('Intelligent node deletion for node:', nodeId);
+    
+    // Récupérer le nœud à supprimer pour référence
+    const nodeToDelete = this.flowStateService.nodes().find(node => node.id === nodeId);
+    if (!nodeToDelete) {
+      console.error('Node to delete not found:', nodeId);
+      return;
+    }
+    
+    console.log('Node type to delete:', nodeToDelete.type);
+    
+    // CAS SPÉCIAL: Si c'est un BinarySplit ou MultiSplit, supprimer tous les nœuds successifs
+    if (nodeToDelete.type === 'BinarySplit' || nodeToDelete.type === 'MultiSplit') {
+      this.deleteNodeAndAllSuccessors(nodeId);
+      return;
+    }
+    
+    // CAS NORMAL: Traitement standard pour les autres types de nœuds
+    
+    // Trouver les connexions entrantes et sortantes du nœud avec préfixes
+    const inputId = `input_${nodeId}`;
+    const outputId = `output_${nodeId}`;
+    
+    // Obtenir toutes les connexions actuelles
+    const allConnections = this.flowStateService.connections();
+    console.log('All connections before deletion:', allConnections);
+    
+    // Trouver les connexions entrantes et sortantes
+    const incomingConnections = allConnections.filter(conn => conn.targetId === inputId);
+    const outgoingConnections = allConnections.filter(conn => conn.sourceId === outputId);
+    
+    console.log(`Found ${incomingConnections.length} incoming and ${outgoingConnections.length} outgoing connections`);
+    console.log('Incoming connections:', incomingConnections);
+    console.log('Outgoing connections:', outgoingConnections);
+    
+    // Mémoriser les IDs des connexions à supprimer
+    const connectionsToDelete = [
+      ...incomingConnections.map(conn => conn.id),
+      ...outgoingConnections.map(conn => conn.id)
+    ];
+    
+    // ÉTAPE CRUCIALE: Créer d'abord les nouvelles connexions
+    // Si le nœud est au milieu (a des connexions entrantes ET sortantes)
+    if (incomingConnections.length > 0 && outgoingConnections.length > 0) {
+      console.log('Node is in the middle of a flow, creating bridging connections');
+      
+      // Pour chaque source (connexion entrante)
+      for (const incomingConn of incomingConnections) {
+        // Pour chaque cible (connexion sortante)
+        for (const outgoingConn of outgoingConnections) {
+          console.log(`Trying to bridge: ${incomingConn.sourceId} -> ${outgoingConn.targetId}`);
+          
+          // Créer une nouvelle connexion directe
+          const newConnection: Connection = {
+            id: `conn_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            sourceId: incomingConn.sourceId,
+            targetId: outgoingConn.targetId
+          };
+          
+          // Ajouter la connexion directement sans passer par addConnectionAndSave
+          // pour éviter de déclencher une vérification qui pourrait échouer
+          this.flowStateService.addConnection(newConnection);
+          console.log('Created bridging connection:', newConnection);
+        }
+      }
+    }
+    
+    // PUIS supprimer les connexions originales
+    for (const connId of connectionsToDelete) {
+      this.flowStateService.removeConnection(connId);
+      console.log('Removed connection:', connId);
+    }
+    
+    // ENFIN, supprimer le nœud lui-même
+    this.flowStateService.removeNode(nodeId);
+    console.log('Removed node:', nodeId);
+    
+    // Sauvegarder l'état pour l'historique
+    this.saveState('Suppression intelligente d\'un nœud');
+    
+    // Demander une synchronisation des IDs après la suppression
+    this.foblexIdManager.requestSync();
+  }
+
+  /**
+   * Supprime récursivement un nœud et tous ses successeurs dans l'arbre
+   * Utilisé principalement pour les BinarySplit et MultiSplit
+   * @param nodeId L'ID du nœud racine à supprimer
+   */
+  private deleteNodeAndAllSuccessors(nodeId: string): void {
+    console.log('Deleting node and all successors:', nodeId);
+    
+    // Identifier tous les nœuds à supprimer en commençant par le nœud racine
+    const nodesToDelete = new Set<string>();
+    
+    // Fonction récursive pour trouver tous les successeurs
+    const findSuccessors = (currentNodeId: string) => {
+      nodesToDelete.add(currentNodeId);
+      
+      // Trouver les connexions sortantes du nœud courant
+      const outputId = `output_${currentNodeId}`;
+      const outgoingConnections = this.flowStateService.connections().filter(
+        conn => conn.sourceId === outputId
+      );
+      
+      // Pour chaque connexion sortante, ajouter le nœud cible à la liste et continuer récursivement
+      for (const conn of outgoingConnections) {
+        const targetNodeId = conn.targetId.replace('input_', '');
+        // Éviter les boucles infinies
+        if (!nodesToDelete.has(targetNodeId)) {
+          findSuccessors(targetNodeId);
+        }
+      }
+    };
+    
+    // Démarrer la recherche récursive
+    findSuccessors(nodeId);
+    
+    console.log('Nodes to delete:', Array.from(nodesToDelete));
+    
+    // Première étape: collecter toutes les connexions à supprimer
+    const connectionsToDelete = new Set<string>();
+    
+    for (const nodeIdToDelete of nodesToDelete) {
+      // Trouver les connexions entrantes et sortantes
+      const inputId = `input_${nodeIdToDelete}`;
+      const outputId = `output_${nodeIdToDelete}`;
+      
+      // Ajouter les connexions entrantes et sortantes à la liste
+      this.flowStateService.connections().forEach(conn => {
+        if (conn.sourceId === outputId || conn.targetId === inputId) {
+          connectionsToDelete.add(conn.id);
+        }
+      });
+    }
+    
+    console.log('Connections to delete:', Array.from(connectionsToDelete));
+    
+    // Supprimer d'abord toutes les connexions
+    for (const connId of connectionsToDelete) {
+      this.flowStateService.removeConnection(connId);
+    }
+    
+    // Puis supprimer tous les nœuds
+    for (const nodeIdToDelete of nodesToDelete) {
+      // Utiliser removeNode sans les vérifications de connexions puisqu'elles ont déjà été supprimées
+      this._removeNodeWithoutConnectionChecks(nodeIdToDelete);
+    }
+    
+    // Sauvegarder l'état pour l'historique
+    this.saveState('Suppression d\'un nœud de type Split et tous ses successeurs');
+    
+    // Demander une synchronisation des IDs après la suppression
+    this.foblexIdManager.requestSync();
+  }
+  
+  /**
+   * Supprime un nœud sans vérifier ou supprimer ses connexions
+   * Utilisé en interne par deleteNodeAndAllSuccessors
+   * @param nodeId L'ID du nœud à supprimer
+   * @private
+   */
+  private _removeNodeWithoutConnectionChecks(nodeId: string): void {
+    // Récupérer tous les nœuds actuels
+    const currentNodes = this.flowStateService.nodes();
+    
+    // Filtrer pour garder tous les nœuds sauf celui à supprimer
+    const updatedNodes = currentNodes.filter(node => node.id !== nodeId);
+    
+    // Mettre à jour la liste des nœuds
+    this.flowStateService.updateNodes(updatedNodes);
+    
+    console.log(`Removed node ${nodeId} without connection checks`);
   }
 } 

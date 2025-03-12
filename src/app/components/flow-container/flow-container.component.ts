@@ -171,6 +171,31 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       console.log('Escape key pressed during drag, cleaning up');
       this.blockAndCleanUnauthorizedDrop();
     }
+    
+    // Si la touche Delete/Suppr est pressée et exactement un nœud est sélectionné
+    if ((event.key === 'Delete' || event.key === 'Del' || event.keyCode === 46) && 
+        !this.flowStateService.draggingItemType()) {
+      console.log('Delete key detected:', event.key, 'keyCode:', event.keyCode);
+      const selectedNodes = this.flowStateService.selectedNodes();
+      console.log('Selected nodes:', selectedNodes);
+      
+      if (selectedNodes.length === 1) {
+        console.log('Delete key pressed with exactly one node selected:', selectedNodes[0]);
+        
+        // Empêcher d'autres actions de l'événement
+        event.preventDefault();
+        event.stopPropagation();
+        
+        // Appeler la suppression intelligente
+        this.flowService.smartDelete(selectedNodes[0]);
+        
+        // Effacer la sélection après la suppression
+        this.flowStateService.updateSelectedNodes([]);
+        
+        // Forcer la mise à jour du composant
+        this.changeDetectorRef.markForCheck();
+      }
+    }
   }
   
   /**
@@ -450,8 +475,8 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    * Gestionnaire de changement de sélection
    */
   onSelectionChange(event: FSelectionChangeEvent): void {
-    console.log('Selection changed:', event.fNodeIds);
-    
+    console.log(this.flowStateService.nodes());
+    console.log(this.flowStateService.connections());
     // Ne traiter que si des nœuds sont effectivement sélectionnés
     if (event.fNodeIds.length > 0) {
       // Convertir les IDs Foblex en IDs internes
