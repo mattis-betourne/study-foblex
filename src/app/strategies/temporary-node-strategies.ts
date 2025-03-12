@@ -1,5 +1,6 @@
 import { CrmNode, Connection } from '../models/crm.models';
 import { FlowStateService } from '../services/flow-state.service';
+import { generateGuid } from '@foblex/utils';
 
 /**
  * Interface améliorée pour les stratégies de création de nœuds temporaires
@@ -98,7 +99,7 @@ export class StandardNodeStrategy implements CentralizedTemporaryNodeStrategy {
         if (flowStateService.isPositionFree(rightNodePosition)) {
           // Créer le nœud temporaire via le service centralisé
           const rightTempNode = flowStateService.createTemporaryNode({
-            id: `temp_right_${this.generateId()}`,
+            id: generateGuid(),
             type: itemType,
             text: `${itemType} (Drop here to connect)`,
             position: rightNodePosition,
@@ -108,7 +109,7 @@ export class StandardNodeStrategy implements CentralizedTemporaryNodeStrategy {
           
           // Créer une connexion temporaire via le service centralisé
           flowStateService.createTemporaryConnection({
-            id: `temp_conn_${this.generateId()}`,
+            id: generateGuid(),
             sourceId: `output_${node.id}`,
             targetId: `input_${rightTempNode.id}`
           });
@@ -130,12 +131,12 @@ export class StandardNodeStrategy implements CentralizedTemporaryNodeStrategy {
           x: node.position.x, 
           y: node.position.y + 200
         };
-        
+
         // Vérifier que les positions ne se superposent pas
         if (flowStateService.isPositionFree(bottomNodePosition)) {
           // Créer le nœud temporaire via le service centralisé
           const bottomTempNode = flowStateService.createTemporaryNode({
-            id: `temp_bottom_${this.generateId()}`,
+            id: generateGuid(),
             type: itemType,
             text: `${itemType} (Drop here to connect)`,
             position: bottomNodePosition,
@@ -145,7 +146,7 @@ export class StandardNodeStrategy implements CentralizedTemporaryNodeStrategy {
           
           // Créer une connexion temporaire via le service centralisé
           flowStateService.createTemporaryConnection({
-            id: `temp_conn_${this.generateId()}`,
+            id: generateGuid(),
             sourceId: `output_${bottomTempNode.id}`,
             targetId: `input_${node.id}`
           });
@@ -156,16 +157,6 @@ export class StandardNodeStrategy implements CentralizedTemporaryNodeStrategy {
     }
     
     return createdNodesCount;
-  }
-  
-  /**
-   * Génère un identifiant unique
-   * @returns L'identifiant généré
-   * @private
-   */
-  private generateId(): string {
-    return Math.random().toString(36).substring(2, 15) + 
-           Math.random().toString(36).substring(2, 15);
   }
 }
 
@@ -239,7 +230,7 @@ export class BinarySplitStrategy implements CentralizedTemporaryNodeStrategy {
         if (!usedPositionIndices.has(i) && flowStateService.isPositionFree(positions[i])) {
           // Créer le nœud temporaire via le service centralisé
           const binarySplitTempNode = flowStateService.createTemporaryNode({
-            id: `temp_binarysplit_${i}_${this.generateId()}`,
+            id: generateGuid(),
             type: itemType,
             text: `${itemType} (Branche ${i === 0 ? 'supérieure' : 'inférieure'})`,
             position: positions[i],
@@ -249,7 +240,7 @@ export class BinarySplitStrategy implements CentralizedTemporaryNodeStrategy {
           
           // Créer une connexion temporaire via le service centralisé
           flowStateService.createTemporaryConnection({
-            id: `temp_conn_${this.generateId()}`,
+            id: generateGuid(),
             sourceId: `output_${node.id}`,
             targetId: `input_${binarySplitTempNode.id}`
           });
@@ -272,7 +263,7 @@ export class BinarySplitStrategy implements CentralizedTemporaryNodeStrategy {
       if (flowStateService.isPositionFree(inputNodePosition)) {
         // Créer le nœud temporaire via le service centralisé
         const inputTempNode = flowStateService.createTemporaryNode({
-          id: `temp_bottom_${this.generateId()}`,
+          id: generateGuid(),
           type: itemType,
           text: `${itemType} (Connexion à l'entrée)`,
           position: inputNodePosition,
@@ -282,7 +273,7 @@ export class BinarySplitStrategy implements CentralizedTemporaryNodeStrategy {
         
         // Créer une connexion temporaire via le service centralisé
         flowStateService.createTemporaryConnection({
-          id: `temp_conn_${this.generateId()}`,
+          id: generateGuid(),
           sourceId: `output_${inputTempNode.id}`,
           targetId: `input_${node.id}`
         });
@@ -302,16 +293,6 @@ export class BinarySplitStrategy implements CentralizedTemporaryNodeStrategy {
    */
   private findConnectedNode(nodeId: string): CrmNode | undefined {
     return this.getAllNodes().find(n => n.id === nodeId);
-  }
-  
-  /**
-   * Génère un identifiant unique
-   * @returns L'identifiant généré
-   * @private
-   */
-  private generateId(): string {
-    return Math.random().toString(36).substring(2, 15) + 
-           Math.random().toString(36).substring(2, 15);
   }
 }
 
@@ -394,7 +375,7 @@ export class MultiSplitStrategy implements CentralizedTemporaryNodeStrategy {
       if (flowStateService.isPositionFree(multiSplitNodePosition)) {
         // Créer le nœud temporaire via le service centralisé
         const multiSplitTempNode = flowStateService.createTemporaryNode({
-          id: `temp_multisplit_${this.generateId()}`,
+          id: generateGuid(),
           type: itemType,
           text: `${itemType} (Nouvelle branche)`,
           position: multiSplitNodePosition,
@@ -404,7 +385,7 @@ export class MultiSplitStrategy implements CentralizedTemporaryNodeStrategy {
         
         // Créer une connexion temporaire via le service centralisé
         flowStateService.createTemporaryConnection({
-          id: `temp_conn_${this.generateId()}`,
+          id: generateGuid(),
           sourceId: `output_${node.id}`,
           targetId: `input_${multiSplitTempNode.id}`
         });
@@ -426,7 +407,7 @@ export class MultiSplitStrategy implements CentralizedTemporaryNodeStrategy {
       if (flowStateService.isPositionFree(inputNodePosition)) {
         // Créer le nœud temporaire via le service centralisé
         const inputTempNode = flowStateService.createTemporaryNode({
-          id: `temp_input_${this.generateId()}`,
+          id: generateGuid(),
           type: itemType,
           text: `${itemType} (Connexion à l'entrée)`,
           position: inputNodePosition,
@@ -436,7 +417,7 @@ export class MultiSplitStrategy implements CentralizedTemporaryNodeStrategy {
         
         // Créer une connexion temporaire via le service centralisé
         flowStateService.createTemporaryConnection({
-          id: `temp_conn_${this.generateId()}`,
+          id: generateGuid(),
           sourceId: `output_${inputTempNode.id}`,
           targetId: `input_${node.id}`
         });
@@ -457,16 +438,7 @@ export class MultiSplitStrategy implements CentralizedTemporaryNodeStrategy {
   private findConnectedNode(nodeId: string): CrmNode | undefined {
     return this.getAllNodes().find(n => n.id === nodeId);
   }
-  
-  /**
-   * Génère un identifiant unique
-   * @returns L'identifiant généré
-   * @private
-   */
-  private generateId(): string {
-    return Math.random().toString(36).substring(2, 15) + 
-           Math.random().toString(36).substring(2, 15);
-  }
+
 }
 
 /**

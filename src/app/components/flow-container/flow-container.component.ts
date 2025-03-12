@@ -307,7 +307,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
         return;
       }
       
-      // Récupérer les IDs Foblex
+      // Récupérer l'ID Foblex et l'ID de nœud interne
       const foblexId = this.foblexIdManager.getNodeFoblexIdFromElement(nodeElement);
       const dataNodeId = nodeElement.getAttribute('data-node-id');
       
@@ -758,68 +758,39 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   onSelectionChange(event: FSelectionChangeEvent): void {
     console.log('Selection changed:', event.fNodeIds);
     
-    // Tentative additionnelle de synchronisation si nécessaire
+    // Ne traiter que si des nœuds sont effectivement sélectionnés
     if (event.fNodeIds.length > 0) {
-      // On s'assure d'abord que tous les IDs Foblex sont correctement synchronisés
-      let allNodesSynced = true;
-      
-      for (const foblexId of event.fNodeIds) {
-        // Vérifier si ce foblexId est déjà mappé à un ID interne
-        const internalId = this.foblexIdManager.getInternalIdFromFoblexId(foblexId);
-        if (!internalId) {
-          console.log(`Foblex ID ${foblexId} not yet mapped to an internal ID, will try to sync`);
-          allNodesSynced = false;
+      // Convertir les IDs Foblex en IDs internes de manière optimisée
+      const internalIds = event.fNodeIds
+        .map(foblexId => {
+          // Vérifier d'abord si l'ID est déjà mappé
+          const internalId = this.foblexIdManager.getInternalIdFromFoblexId(foblexId);
           
-          // Essayer de trouver l'élément DOM correspondant à ce foblexId
-          const nodeElement = this.elementRef.nativeElement.querySelector(`[data-f-node-id="${foblexId}"]`);
-          if (nodeElement) {
-            // Tenter un mapping par position
-            const transform = nodeElement.style.transform;
-            const match = transform.match(/translate\((\d+)px,\s*(\d+)px\)/);
+          if (!internalId) {
+            console.warn(`No internal ID mapping found for Foblex ID: ${foblexId}`);
             
-            if (match && match.length >= 3) {
-              const x = parseInt(match[1], 10);
-              const y = parseInt(match[2], 10);
-              
-              // Chercher un nœud avec une position proche
-              const matchingNode = this.flowStateService.nodes().find(n => 
-                Math.abs(n.position.x - x) < 10 && Math.abs(n.position.y - y) < 10
-              );
-              
-              if (matchingNode) {
-                console.log(`Found node by position match: ${matchingNode.id} at (${x}, ${y}), will sync with Foblex ID ${foblexId}`);
-                this.foblexIdManager.syncNodeIds(
-                  matchingNode, 
-                  foblexId
-                );
-              }
+            // Si une synchronisation n'est pas déjà en cours, déclencher une synchronisation différée
+            if (!this.isSynchronizing) {
+              console.log('Scheduling ID synchronization due to unmapped Foblex ID');
+              setTimeout(() => this.syncFoblexIds(), 0);
             }
           }
-        }
-      }
+          
+          return internalId;
+        })
+        .filter((id): id is string => id !== undefined);
       
-      // Si tous les nœuds ne sont pas synchronisés, on force une synchronisation complète
-      if (!allNodesSynced) {
-        console.log('Some nodes not synced, forcing complete synchronization');
-        this.syncFoblexIds();
-      }
+      console.log('Selection changed (internal IDs):', internalIds);
+      
+      // Stocker l'historique des sélections pour le débogage
+      this.selectionHistory.push(event.fNodeIds);
+      
+      // Mettre à jour les nœuds sélectionnés via le service d'état
+      this.flowStateService.updateSelectedNodes(internalIds);
+    } else {
+      // Si aucun nœud n'est sélectionné, effacer la sélection actuelle
+      this.flowStateService.updateSelectedNodes([]);
     }
-    
-    // Conversion des IDs Foblex en IDs internes avec plus de logs
-    const internalIds = event.fNodeIds
-      .map(foblexId => {
-        const internalId = this.foblexIdManager.getInternalIdFromFoblexId(foblexId);
-        if (!internalId) {
-          console.warn(`No internal ID mapping found for Foblex ID: ${foblexId}`);
-        }
-        return internalId;
-      })
-      .filter((id): id is string => id !== undefined);
-    
-    console.log('Selection changed (internal IDs):', internalIds);
-    
-    this.selectionHistory.push(event.fNodeIds);
-    this.flowStateService.updateSelectedNodes(internalIds);
   }
 
   /**

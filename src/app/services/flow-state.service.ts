@@ -1,5 +1,6 @@
 import { computed, Injectable, signal } from '@angular/core';
 import { Connection, CrmNode } from '../models/crm.models';
+import { generateGuid } from '@foblex/utils';
 
 /**
  * Interface représentant l'état du flow
@@ -133,7 +134,7 @@ export class FlowStateService {
     
     // Générer un ID s'il n'existe pas
     if (!nodeClone.id) {
-      nodeClone.id = `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      nodeClone.id = generateGuid();
     }
     
     // S'assurer que les valeurs par défaut sont définies
@@ -204,7 +205,7 @@ export class FlowStateService {
     
     // Générer un ID s'il n'existe pas
     if (!connectionClone.id) {
-      connectionClone.id = `conn-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      connectionClone.id = generateGuid();
     }
     
     this._state.update(state => ({
@@ -443,7 +444,7 @@ export class FlowStateService {
    */
   createTemporaryNode(nodeData: Partial<CrmNode>): CrmNode {
     const tempNode: CrmNode = {
-      id: nodeData.id || `temp_${Math.floor(Math.random() * 10000)}_${Date.now()}`,
+      id: nodeData.id || generateGuid(),
       type: nodeData.type || 'Unknown',
       text: nodeData.text || `${nodeData.type || 'Node'} (Temporary)`,
       position: nodeData.position || { x: 0, y: 0 },
@@ -475,7 +476,7 @@ export class FlowStateService {
    */
   createTemporaryConnection(connectionData: Partial<Connection>): Connection {
     const tempConnection: Connection = {
-      id: connectionData.id || `temp_conn_${Math.floor(Math.random() * 10000)}_${Date.now()}`,
+      id: connectionData.id || generateGuid(),
       sourceId: connectionData.sourceId || '',
       targetId: connectionData.targetId || ''
     };
@@ -508,7 +509,7 @@ export class FlowStateService {
     
     // Créer un nouveau nœud permanent à partir du nœud temporaire
     const newNode: CrmNode = {
-      id: `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: generateGuid(),
       type: tempNode.type,
       text: tempNode.text.replace(' (Temporary)', '').replace(' (Drop here)', ''),
       position: { ...tempNode.position },
@@ -530,7 +531,7 @@ export class FlowStateService {
       
       // Créer une nouvelle connexion permanente
       const newConnection: Connection = {
-        id: `conn-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        id: generateGuid(),
         sourceId: isSource ? `output_${newNode.id}` : tempConn.sourceId,
         targetId: !isSource ? `input_${newNode.id}` : tempConn.targetId
       };
