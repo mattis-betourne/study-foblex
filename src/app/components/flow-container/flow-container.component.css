@@ -19,3 +19,43 @@
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
+/* Style pour les nœuds sélectionnés */
+.f-node.f-selected:not(.node-is-copied) {
+  outline: 2px solid #4f46e5; /* Bordure violette */
+  outline-offset: 2px; /* Espace entre le nœud et la bordure */
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.3); /* Ombre douce autour de la bordure */
+  transform: scale(1.03); /* Légère augmentation de taille */
+  transition: all 0.2s ease-in-out; /* Animation fluide */
+  z-index: 10; /* S'assurer que le nœud sélectionné est au premier plan */
+  animation: selectionPulse 1.5s infinite;
+}
+
+/* Animation de pulsation pour accentuer la sélection */
+@keyframes selectionPulse {
+  0% { box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(79, 70, 229, 0.2); }
+  100% { box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.3); }
+}
+
+.f-node.f-selected {
+  animation: selectionPulse 1.5s infinite;
+}
+
+.node-is-copied {
+  outline: 2px dashed #a855f7 !important; /* Bordure violette en pointillés */
+  outline-offset: 3px !important;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.5) !important; /* Lueur violette */
+}
+
+/* Ajouter ces styles à votre fichier CSS */
+.group:hover .group-hover\:opacity-100 {
+  opacity: 1;
+}
+
+.transition-opacity {
+  transition-property: opacity;
+}
+
+.duration-200 {
+  transition-duration: 200ms;
+}

@@ -50,12 +50,12 @@ export interface TemporaryNodeStrategy {
    * @param itemType Le type d'élément en cours de drag
    */
   canApply(
-    node: CrmNode, 
-    existingOutputConnections: Connection[], 
+    node: CrmNode,
+    existingOutputConnections: Connection[],
     existingInputConnections: Connection[],
     itemType: string
   ): boolean;
-  
+
   /**
    * Crée des nœuds temporaires autour d'un nœud existant
    * @param node Le nœud existant
@@ -75,4 +75,5 @@ export interface TemporaryNodeStrategy {
     getDefaultMaxInputs: (type: string) => number,
     getDefaultMaxOutputs: (type: string) => number
   ): TemporaryNodesResult;
-} 
+}
+

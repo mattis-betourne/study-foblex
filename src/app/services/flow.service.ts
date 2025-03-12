@@ -1,10 +1,9 @@
-import { Injectable, ChangeDetectorRef, signal, effect, inject } from '@angular/core';
-import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { generateGuid } from '@foblex/utils';
-import { CrmNode, Connection } from '../models/crm.models';
-import { BehaviorSubject, Observable } from 'rxjs';
-import { HistoryService, FlowState } from './history.service';
-import { TemporaryNodeStrategyFactory } from '../strategies/temporary-node-strategies';
+import {ChangeDetectorRef, inject, Injectable, signal} from '@angular/core';
+import {toObservable} from '@angular/core/rxjs-interop';
+import {generateGuid} from '@foblex/utils';
+import {Connection, CrmNode} from '../models/crm.models';
+import {FlowState, HistoryService} from './history.service';
+import {TemporaryNodeStrategyFactory} from '../strategies/temporary-node-strategies';
 
 /**
  * Service responsable de la gestion du flow diagram (nœuds, connexions, etc.)
@@ -15,30 +14,26 @@ import { TemporaryNodeStrategyFactory } from '../strategies/temporary-node-strat
 export class FlowService {
   // Signaux pour l'état principal
   private readonly _nodes = signal<CrmNode[]>([]);
+  // Pour la compatibilité avec le code existant qui utilise l'API Observable
+  readonly nodes$ = toObservable(this._nodes);
   private readonly _connections = signal<Connection[]>([]);
+  readonly connections$ = toObservable(this._connections);
   private readonly _temporaryNodes = signal<CrmNode[]>([]);
+  readonly temporaryNodes$ = toObservable(this._temporaryNodes);
   private readonly _temporaryConnections = signal<Connection[]>([]);
+  readonly temporaryConnections$ = toObservable(this._temporaryConnections);
   private readonly _draggingItemType = signal<string | null>(null);
+  readonly draggingItemType$ = toObservable(this._draggingItemType);
   private readonly _isCreatingNode = signal<boolean>(false);
-
+  readonly isCreatingNode$ = toObservable(this._isCreatingNode);
   /**
    * Référence au composant canvas pour les opérations de zoom
    */
   private _canvasRef: any = null;
-
   /**
    * Référence à la directive de zoom pour les opérations de zoom
    */
   private _zoomDirective: any = null;
-
-  // Pour la compatibilité avec le code existant qui utilise l'API Observable
-  readonly nodes$ = toObservable(this._nodes);
-  readonly connections$ = toObservable(this._connections);
-  readonly temporaryNodes$ = toObservable(this._temporaryNodes);
-  readonly temporaryConnections$ = toObservable(this._temporaryConnections);
-  readonly draggingItemType$ = toObservable(this._draggingItemType);
-  readonly isCreatingNode$ = toObservable(this._isCreatingNode);
-
   private readonly historyService = inject(HistoryService);
 
   // Créer la factory des stratégies
@@ -181,7 +176,7 @@ export class FlowService {
    */
   addNode(node: CrmNode): void {
     this._nodes.update(nodes => [...nodes, node]);
-    
+
     // Sauvegarder l'état après modification
     this.saveState();
   }
@@ -192,7 +187,7 @@ export class FlowService {
    */
   addConnection(connection: Connection): void {
     this._connections.update(connections => [...connections, connection]);
-    
+
     // Sauvegarder l'état après modification
     this.saveState();
   }
@@ -206,9 +201,9 @@ export class FlowService {
       console.log('Default nodes already exist, skipping creation');
       return;
     }
-    
+
     console.log('Creating default nodes...');
-    
+
     try {
       // Crée un nœud Client par défaut avec une position définie
       const clientNode: CrmNode = {
@@ -217,9 +212,9 @@ export class FlowService {
         text: 'Client 1',
         position: { x: 100, y: 100 },
         maxInputs: 0,
-        maxOutputs: 1 
+        maxOutputs: 1
       };
-      
+
       // Crée un nœud Task par défaut avec une position définie
       const taskNode: CrmNode = {
         id: generateGuid(),
@@ -229,31 +224,31 @@ export class FlowService {
         maxInputs: 1,
         maxOutputs: 1
       };
-      
+
       // Ajoute les nœuds en une seule opération pour éviter les mises à jour partielles
       const newNodes = [clientNode, taskNode];
-      
+
       // Log pour déboguer
       console.log('Nodes to be added:', JSON.stringify(newNodes));
-      
+
       // Mise à jour des nœuds
       this._nodes.set(newNodes);
-      
+
       // Vérification après mise à jour
       console.log('Nodes after update:', JSON.stringify(this._nodes()));
-      
+
       // Crée une connexion entre les nœuds
       const connection: Connection = {
         id: generateGuid(),
         sourceId: `output_${clientNode.id}`,
         targetId: `input_${taskNode.id}`
       };
-      
+
       // Ajoute la connexion
       this._connections.set([connection]);
-      
+
       console.log('Default nodes created successfully:', newNodes);
-      
+
       // Sauvegarder l'état APRÈS création des nœuds par défaut
       // et s'assurer que c'est le premier état dans l'historique
       if (this._nodes().length > 0) {
@@ -270,30 +265,18 @@ export class FlowService {
   }
 
   /**
-   * Vérifie si une position est libre (pas de nœud existant à cette position)
-   */
-  private isPositionFree(position: {x: number, y: number}): boolean {
-    // Considérer une marge de 50px autour des nœuds existants
-    const margin = 50;
-    return !this._nodes().some(node => 
-      Math.abs(node.position.x - position.x) < margin && 
-      Math.abs(node.position.y - position.y) < margin
-    );
-  }
-
-  /**
    * Nettoie les éléments temporaires
    */
   clearTemporaryElements(): void {
     // Ne déclencher de sauvegarde que si nous avions des éléments temporaires
-    const hadTemporaryElements = 
-      this._temporaryNodes().length > 0 || 
+    const hadTemporaryElements =
+      this._temporaryNodes().length > 0 ||
       this._temporaryConnections().length > 0;
-    
+
     // Effacer les nœuds et connexions temporaires
     this._temporaryNodes.set([]);
     this._temporaryConnections.set([]);
-    
+
     // Si nous avons supprimé des éléments temporaires, sauvegarder l'état
     if (hadTemporaryElements) {
       this.saveState();
@@ -306,14 +289,14 @@ export class FlowService {
    */
   createTemporaryNodes(itemType: string): void {
     console.log('Creating temporary nodes for item type:', itemType);
-    
+
     // D'abord, nettoyer les anciens nœuds temporaires
     this.clearTemporaryElements();
-    
+
     // Pour chaque nœud existant, créer un nœud temporaire qui pourrait s'y connecter
     if (this._nodes().length === 0) {
       console.log('No existing nodes to create temporary connections to');
-      
+
       // Créer un nœud temporaire au centre si aucun nœud n'existe
       const centralTempNode: CrmNode = {
         id: `temp_central_${generateGuid()}`,
@@ -323,27 +306,27 @@ export class FlowService {
         maxInputs: this.getDefaultMaxInputs(itemType),
         maxOutputs: this.getDefaultMaxOutputs(itemType)
       };
-      
+
       this._temporaryNodes.set([centralTempNode]);
       return;
     }
-    
+
     const tempNodes: CrmNode[] = [];
     const tempConnections: Connection[] = [];
-    
+
     // Pour chaque nœud existant, appliquer la stratégie appropriée
     for (const existingNode of this._nodes()) {
       console.log('Creating temporary nodes around existing node:', existingNode.id);
-      
+
       // Compter les connexions existantes pour ce nœud
       const existingOutputConnections = this._connections().filter(
         conn => conn.sourceId === `output_${existingNode.id}`
       );
-      
+
       const existingInputConnections = this._connections().filter(
         conn => conn.targetId === `input_${existingNode.id}`
       );
-      
+
       // Obtenir la stratégie appropriée pour ce nœud
       const strategy = this.strategyFactory.getStrategy(
         existingNode,
@@ -351,7 +334,7 @@ export class FlowService {
         existingInputConnections,
         itemType
       );
-      
+
       // Appliquer la stratégie pour créer des nœuds temporaires
       const result = strategy.createTemporaryNodes(
         existingNode,
@@ -362,12 +345,12 @@ export class FlowService {
         (type) => this.getDefaultMaxInputs(type),
         (type) => this.getDefaultMaxOutputs(type)
       );
-      
+
       // Ajouter les nœuds et connexions temporaires
       tempNodes.push(...result.nodes);
       tempConnections.push(...result.connections);
     }
-    
+
     console.log('Created temporary nodes:', tempNodes.length);
     this._temporaryNodes.set(tempNodes);
     this._temporaryConnections.set(tempConnections);
@@ -380,16 +363,16 @@ export class FlowService {
    */
   handleDropOnTemporaryNode(temporaryNodeId: string, changeDetectorRef: ChangeDetectorRef): void {
     console.log('Dropped on temporary node:', temporaryNodeId);
-    
+
     // Marquer que nous commençons la création d'un nœud
     this._isCreatingNode.set(true);
-    
+
     if (!this._draggingItemType()) {
       this.clearTemporaryElements();
       this._isCreatingNode.set(false);
       return;
     }
-    
+
     // Trouver le nœud temporaire concerné
     const temporaryNode = this._temporaryNodes().find(node => node.id === temporaryNodeId);
     if (!temporaryNode) {
@@ -397,12 +380,12 @@ export class FlowService {
       this._isCreatingNode.set(false);
       return;
     }
-    
+
     // Trouver les connexions temporaires associées à ce nœud
     const relatedTemporaryConnections = this._temporaryConnections().filter(
       conn => conn.sourceId === `output_${temporaryNodeId}` || conn.targetId === `input_${temporaryNodeId}`
     );
-    
+
     // Créer un nœud permanent à la place du nœud temporaire
     const permanentNode: CrmNode = {
       id: generateGuid(),
@@ -412,43 +395,43 @@ export class FlowService {
       maxInputs: temporaryNode.maxInputs,
       maxOutputs: temporaryNode.maxOutputs
     };
-    
+
     // Ajouter le nœud permanent
     this.addNode(permanentNode);
-    
+
     // Créer des connexions permanentes pour remplacer les temporaires
     for (const tempConn of relatedTemporaryConnections) {
       // Déterminer si le nœud temporaire est la source ou la cible
       const isSource = tempConn.sourceId.includes(temporaryNodeId);
-      
+
       // Créer une connexion permanente en fonction de la position du nœud temporaire
       const permanentConnection: Connection = {
         id: generateGuid(),
-        sourceId: isSource 
-          ? `output_${permanentNode.id}` 
+        sourceId: isSource
+          ? `output_${permanentNode.id}`
           : tempConn.sourceId,
-        targetId: !isSource 
-          ? `input_${permanentNode.id}` 
+        targetId: !isSource
+          ? `input_${permanentNode.id}`
           : tempConn.targetId
       };
-      
+
       this.addConnection(permanentConnection);
     }
-    
+
     // Nettoyer les éléments temporaires
     this.clearTemporaryElements();
-    
+
     // Réinitialiser l'état
     this._draggingItemType.set(null);
-    
+
     // Supprimer tout élément de placeholder qui aurait pu être créé par le système de drag-and-drop de Foblex
     setTimeout(() => {
       const placeholders = document.querySelectorAll('.f-external-item-placeholder');
       placeholders.forEach(el => el.remove());
-      
+
       // Force la mise à jour de la vue
       changeDetectorRef.detectChanges();
-      
+
       // Réinitialiser le flag de création de nœud
       this._isCreatingNode.set(false);
     }, 50);
@@ -460,25 +443,25 @@ export class FlowService {
    */
   endDrag(changeDetectorRef: ChangeDetectorRef): void {
     console.log('Ending drag operation');
-    
+
     // Nettoyer les éléments temporaires
     this.clearTemporaryElements();
-    
+
     // Réinitialiser l'état
     this._draggingItemType.set(null);
     this._isCreatingNode.set(false);
-    
+
     // Nettoyer les éléments visuels
     const placeholders = document.querySelectorAll('.f-external-item-placeholder');
     placeholders.forEach(el => el.remove());
-    
+
     const previews = document.querySelectorAll('.f-external-item-preview');
     previews.forEach(el => el.remove());
-    
+
     document.body.style.cursor = '';
     document.body.classList.remove('f-dragging');
     document.body.classList.remove('no-drop-allowed');
-    
+
     // Force la mise à jour de la vue
     if (changeDetectorRef) {
       changeDetectorRef.detectChanges();
@@ -519,7 +502,7 @@ export class FlowService {
   getNodeClass(type: string): string {
     let bgClass = '';
     const baseClasses = 'min-w-[180px] rounded-md shadow-md overflow-hidden';
-    
+
     switch (type) {
       case 'Client':
         bgClass = 'bg-blue-500';
@@ -545,7 +528,7 @@ export class FlowService {
       default:
         bgClass = 'bg-gray-500';
     }
-    
+
     return `${baseClasses} ${bgClass}`;
   }
 
@@ -571,6 +554,114 @@ export class FlowService {
       this._nodes.set(nextState.nodes);
       this._connections.set(nextState.connections);
     }
+  }
+
+  /**
+   * Supprime un nœud et toutes ses connexions
+   * @param nodeId ID du nœud à supprimer
+   */
+  deleteNode(nodeId: string): void {
+    console.log('Service : Suppression du nœud', nodeId);
+
+    // Trouver toutes les connexions associées à ce nœud
+    const connectionsToRemove = this._connections().filter(conn =>
+      conn.sourceId === `output_${nodeId}` || conn.targetId === `input_${nodeId}`
+    );
+
+    // Supprimer les connexions
+    if (connectionsToRemove.length > 0) {
+      console.log('Suppression des connexions associées:', connectionsToRemove);
+      const remainingConnections = this._connections().filter(conn =>
+        conn.sourceId !== `output_${nodeId}` && conn.targetId !== `input_${nodeId}`
+      );
+      this._connections.set(remainingConnections);
+    }
+
+    // Supprimer le nœud
+    const remainingNodes = this._nodes().filter(node => node.id !== nodeId);
+    this._nodes.set(remainingNodes);
+
+    // Sauvegarder l'état après suppression
+    this.saveState();
+  }
+
+  canConnect(source: string, target: string): boolean {
+    // Vérifier les règles métier pour les connexions
+    const sourceNodeId = source.replace('output_', '');
+    const targetNodeId = target.replace('input_', '');
+
+    const sourceNode = this._nodes().find(node => node.id === sourceNodeId);
+    const targetNode = this._nodes().find(node => node.id === targetNodeId);
+
+    if (!sourceNode || !targetNode) {
+      return false;
+    }
+
+    // Vérifier si le nœud source est un output
+    const isSourceOutput = source.startsWith('output_');
+    // Vérifier si le nœud cible est un input
+    const isTargetInput = target.startsWith('input_');
+
+    // Vérifier que la connexion va d'un output vers un input
+    if (!isSourceOutput || !isTargetInput) {
+      return false;
+    }
+
+    const existingOutputs = this._connections().filter(conn =>
+      conn.sourceId === source
+    );
+
+    const existingInputs = this._connections().filter(conn =>
+      conn.targetId === target
+    );
+
+    // Règles spécifiques pour BinarySplit
+    if (sourceNode.type === 'BinarySplit') {
+      // Un BinarySplit ne peut avoir que 2 connexions de sortie
+      if (existingOutputs.length >= 2) {
+        return false;
+      }
+    }
+
+    // Règles spécifiques pour MultiSplit
+    if (sourceNode.type === 'MultiSplit') {
+      // Un MultiSplit ne peut avoir que 5 connexions de sortie maximum
+      if (existingOutputs.length >= 5) {
+        return false;
+      }
+    }
+
+    // Vérifier les limites générales d'entrées/sorties
+    if (targetNode.maxInputs !== undefined && existingInputs.length >= targetNode.maxInputs) {
+      return false;
+    }
+
+    if (sourceNode.maxOutputs !== undefined && existingOutputs.length >= sourceNode.maxOutputs) {
+      return false;
+    }
+
+    // Vérifier si une connexion existe déjà entre ces deux ports
+    const connectionExists = this._connections().some(
+      conn => conn.sourceId === source && conn.targetId === target
+    );
+
+    if (connectionExists) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Vérifie si une position est libre (pas de nœud existant à cette position)
+   */
+  private isPositionFree(position: {x: number, y: number}): boolean {
+    // Considérer une marge de 50px autour des nœuds existants
+    const margin = 50;
+    return !this._nodes().some(node =>
+      Math.abs(node.position.x - position.x) < margin &&
+      Math.abs(node.position.y - position.y) < margin
+    );
   }
 
   /**
@@ -643,71 +734,4 @@ export class FlowService {
         return 1;  // Par défaut, 1 sortie
     }
   }
-
-  canConnect(source: string, target: string): boolean {
-    // Vérifier les règles métier pour les connexions
-    const sourceNodeId = source.replace('output_', '');
-    const targetNodeId = target.replace('input_', '');
-    
-    const sourceNode = this._nodes().find(node => node.id === sourceNodeId);
-    const targetNode = this._nodes().find(node => node.id === targetNodeId);
-
-    if (!sourceNode || !targetNode) {
-      return false;
-    }
-
-    // Vérifier si le nœud source est un output
-    const isSourceOutput = source.startsWith('output_');
-    // Vérifier si le nœud cible est un input
-    const isTargetInput = target.startsWith('input_');
-
-    // Vérifier que la connexion va d'un output vers un input
-    if (!isSourceOutput || !isTargetInput) {
-      return false;
-    }
-
-    const existingOutputs = this._connections().filter(conn => 
-      conn.sourceId === source
-    );
-    
-    const existingInputs = this._connections().filter(conn => 
-      conn.targetId === target
-    );
-
-    // Règles spécifiques pour BinarySplit
-    if (sourceNode.type === 'BinarySplit') {
-      // Un BinarySplit ne peut avoir que 2 connexions de sortie
-      if (existingOutputs.length >= 2) {
-        return false;
-      }
-    }
-    
-    // Règles spécifiques pour MultiSplit
-    if (sourceNode.type === 'MultiSplit') {
-      // Un MultiSplit ne peut avoir que 5 connexions de sortie maximum
-      if (existingOutputs.length >= 5) {
-        return false;
-      }
-    }
-
-    // Vérifier les limites générales d'entrées/sorties
-    if (targetNode.maxInputs !== undefined && existingInputs.length >= targetNode.maxInputs) {
-      return false;
-    }
-
-    if (sourceNode.maxOutputs !== undefined && existingOutputs.length >= sourceNode.maxOutputs) {
-      return false;
-    }
-
-    // Vérifier si une connexion existe déjà entre ces deux ports
-    const connectionExists = this._connections().some(
-      conn => conn.sourceId === source && conn.targetId === target
-    );
-
-    if (connectionExists) {
-      return false;
-    }
-
-    return true;
-  }
-} 
+}
