@@ -13,6 +13,8 @@
           (fSelectionChange)="onSelectionChange($event)"
           [attr.data-dragging]="flowStateService.draggingItemType() ? 'true' : 'false'"
           (fCreateConnection)="onCreateConnection($event)">
+          <f-selection-area></f-selection-area>
+
     <f-canvas #canvas fZoom>
       <!-- Les nœuds permanents -->
       @for (node of flowStateService.nodes(); track node.id) {
@@ -68,6 +70,7 @@
           [fOutputId]="connection.sourceId" 
           [fInputId]="connection.targetId"
           [attr.data-connection-id]="connection.id"
+          [fSelectionDisabled]="true"
           fBehavior="floating">
         </f-connection>
       }
@@ -77,6 +80,7 @@
         <f-connection 
           [fOutputId]="connection.sourceId" 
           [fInputId]="connection.targetId"
+          [fSelectionDisabled]="true"
           fBehavior="floating"
           class="opacity-80 temporary-connection"
           style="--f-connection-stroke: #10b981; --f-connection-stroke-width: 2px; --f-connection-stroke-dasharray: 5,3;">

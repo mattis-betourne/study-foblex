@@ -25,3 +25,8 @@
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.f-selection-area {
+  box-shadow: 0 0 0 2px rgb(59 130 246), 0 0 0 4px white;
+  filter: drop-shadow(0 10px 15px rgb(0 0 0 / 0.1));
+  background-color: rgba(59, 130, 246, 0.1);
+}
