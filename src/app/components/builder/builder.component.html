@@ -52,8 +52,7 @@
                       class="cursor-grab" 
                       fExternalItem 
                       [fData]="item.type" 
-                      [fPreviewMatchSize]="true"
-                      (pointerdown)="onDragStart(item.type)"
+                      (mousedown)="onDragStart(item.type)"
                       (dragend)="onDragEnd()">
                       <div 
                         class="rounded-md overflow-hidden border border-gray-200 bg-white hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">

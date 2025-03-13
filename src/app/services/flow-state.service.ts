@@ -470,7 +470,7 @@ export class FlowStateService {
       case 'BinarySplit':
         return 2;  // Un séparateur binaire a exactement 2 sorties
       case 'MultiSplit':
-        return 5;  // Un séparateur multiple a jusqu'à 5 sorties
+        return 3;  // Un séparateur multiple a jusqu'à 5 sorties
       case 'Exit':
         return 0;  // Un nœud Exit n'a aucune sortie
       
@@ -620,6 +620,48 @@ export class FlowStateService {
     
     console.log(`Converted temporary node ${temporaryNodeId} to permanent node ${newNode.id}`);
     return newNode;
+  }
+
+  /**
+   * Recalcule les positions de toutes les nodes après une insertion
+   * @param insertAfterNodeId ID de la node après laquelle insérer
+   * @param newNode La nouvelle node à insérer
+   */
+  recalculateNodesPositions(insertAfterNodeId: string, newNode: CrmNode): void {
+    const HORIZONTAL_SPACING = 250;
+    
+    // Trier les nodes par position X
+    const sortedNodes = [...this.nodes()].sort((a, b) => a.position.x - b.position.x);
+    
+    // Trouver l'index d'insertion
+    const insertIndex = sortedNodes.findIndex(n => n.id === insertAfterNodeId);
+    if (insertIndex === -1) return;
+    
+    // Insérer la nouvelle node
+    const updatedNodes = [
+      ...sortedNodes.slice(0, insertIndex + 1),
+      newNode,
+      ...sortedNodes.slice(insertIndex + 1)
+    ];
+    
+    // Recalculer les positions
+    updatedNodes.forEach((node, index) => {
+      node.position.x = index * HORIZONTAL_SPACING;
+    });
+    
+    // Mettre à jour les nodes
+    this.updateNodes(updatedNodes);
+  }
+
+  /**
+   * Obtient la node liée à une connexion
+   */
+  getNodeFromConnectionId(connectionId: string, isSource: boolean = true): CrmNode | undefined {
+    const connection = this.connections().find(c => c.id === connectionId);
+    if (!connection) return undefined;
+    
+    const nodeId = (isSource ? connection.sourceId : connection.targetId).replace(/^(input_|output_)/, '');
+    return this.nodes().find(n => n.id === nodeId);
   }
 
   /**

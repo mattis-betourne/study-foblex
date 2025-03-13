@@ -20,7 +20,7 @@ import { ZoomService } from './zoom.service';
 })
 export class FlowService {
   // Constante pour l'espacement standard entre les nœuds
-  private readonly STANDARD_NODE_OFFSET = 350;
+  private readonly STANDARD_NODE_OFFSET = 250;
 
   // Services injectés
   private readonly historyService = inject(HistoryService);
@@ -41,7 +41,7 @@ export class FlowService {
   startDragging(itemType: string): void {
     console.log(`Starting drag for item type: ${itemType}`);
     this.flowStateService.updateDraggingItemType(itemType);
-    this.temporaryNodeService.createTemporaryNodes(itemType);
+    //this.temporaryNodeService.createTemporaryNodes(itemType);
   }
 
   /**
@@ -50,7 +50,6 @@ export class FlowService {
   endDragging(): void {
     console.log('Ending drag operation');
     this.flowStateService.updateDraggingItemType(null);
-    this.temporaryNodeService.clearTemporaryElements();
   }
 
   /**
@@ -253,7 +252,7 @@ export class FlowService {
    * Annule la dernière action
    */
   undo(): void {
-    this.temporaryNodeService.clearTemporaryElements();
+    //this.temporaryNodeService.clearTemporaryElements();
     this.historyService.undo();
   }
 
@@ -261,7 +260,7 @@ export class FlowService {
    * Rétablit l'action annulée
    */
   redo(): void {
-    this.temporaryNodeService.clearTemporaryElements();
+    //this.temporaryNodeService.clearTemporaryElements();
     this.historyService.redo();
   }
 

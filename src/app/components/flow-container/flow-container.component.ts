@@ -12,7 +12,8 @@ import {
   inject
 } from '@angular/core';
 import { FCanvasComponent, FFlowComponent, FFlowModule, FSelectionChangeEvent, FZoomDirective } from '@foblex/flow';
-import { TemporaryNodeDirective } from '../../directives/temporary-node.directive';
+import { ConnectionCenterDirective } from '../../directives/connection-center.directive';
+import { DropZoneDirective } from '../../directives/drop-zone.directive';
 import { Connection, CrmNode } from '../../models/crm.models';
 import { FlowStateService } from '../../services/flow-state.service';
 import { FlowService } from '../../services/flow.service';
@@ -31,9 +32,10 @@ import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
   imports: [
     CommonModule,
     FFlowModule,
-    TemporaryNodeDirective,
     FlowToolbarComponent,
-    ConfirmationDialogComponent
+    ConfirmationDialogComponent,
+    DropZoneDirective,
+    ConnectionCenterDirective
   ],
   templateUrl: './flow-container.component.html',
   styleUrls: ['./flow-container.component.css'],
@@ -60,7 +62,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
   readonly foblexIdManager = inject(FoblexIdManagerService);
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
   private readonly elementRef = inject(ElementRef);
-  
+
   constructor() {
     console.log('FlowContainer constructor - Initializing default nodes');
     // Initialiser les nœuds par défaut dans le constructeur
@@ -71,20 +73,15 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       const itemType = this.flowStateService.draggingItemType();
       console.log('Drag item type changed to:', itemType);
       
-      if (itemType) {
-        // Quand le type change (début de drag), créer les nœuds temporaires
-        this.temporaryNodeService.createTemporaryNodes(itemType);
-        setTimeout(() => {
-          this.changeDetectorRef.detectChanges();
-        }, 50);
-      }
+      this.changeDetectorRef.detectChanges();
+      
     });
     
     // Effets pour surveiller les changements de nœuds et de connexions
     effect(() => {
       // Lire les nœuds pour surveiller les changements
       const nodes = this.flowStateService.nodes();
-      console.log('Nodes updated:', nodes.length);
+      console.log('Nodes updated:', nodes);
       
       // Forcer la détection de changements après chaque mise à jour des nœuds
       this.changeDetectorRef.detectChanges();
@@ -93,7 +90,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     effect(() => {
       // Lire les connexions pour surveiller les changements
       const connections = this.flowStateService.connections();
-      console.log('Connections updated:', connections.length);
+      console.log('Connections updated:', connections);
       
       // Forcer la détection de changements après chaque mise à jour des connexions
       this.changeDetectorRef.detectChanges();
@@ -228,28 +225,11 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    * @param event L'événement dragover
    */
   onDragOver(event: DragEvent): void {
-    // Ne rien faire si aucun élément n'est en cours de drag
-    if (!this.flowStateService.draggingItemType()) {
-      return;
-    }
-    
-    // Permet le drop en annulant le comportement par défaut
     event.preventDefault();
-    
-    // Vérifier si nous sommes en train de survoler un nœud temporaire
-    const elementsAtPoint = document.elementsFromPoint(event.clientX, event.clientY);
-    const isOverTemporaryNode = elementsAtPoint.some(el => 
-      el.classList.contains('temporary-node') || el.closest('.temporary-node') !== null
-    );
-    
-    // Mise à jour du style du curseur et des classes visuelles
-    if (isOverTemporaryNode) {
-      document.body.classList.remove('no-drop-allowed');
-      event.dataTransfer!.dropEffect = 'copy';
-    } else {
-      document.body.classList.add('no-drop-allowed');
-      event.dataTransfer!.dropEffect = 'none';
-    }
+    event.stopPropagation();
+    console.log('DragOver - draggingItemType:', this.flowStateService.draggingItemType());
+    // Forcer la détection de changements
+    this.changeDetectorRef.detectChanges();
   }
   
   /**
@@ -276,8 +256,6 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     if (this.flowStateService.draggingItemType() && isOverTemporaryNode) {
       event.preventDefault();
       
-      // Ne pas ajouter de logique supplémentaire ici car le drop sera géré 
-      // par l'événement dropOnNode émis par la directive appTemporaryNode
     }
   }
   
@@ -486,5 +464,13 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       // Si aucun nœud n'est sélectionné, effacer la sélection actuelle
       this.flowStateService.updateSelectedNodes([]);
     }
+  }
+
+  onDropOnConnection(connectionId: string): void {
+    const itemType = this.flowStateService.draggingItemType();
+    if (!itemType) return;
+    
+    this.temporaryNodeService.handleDropOnConnection(connectionId, itemType);
+    this.changeDetectorRef.detectChanges();
   }
 }
