@@ -1,11 +1,12 @@
-import { Injectable, ChangeDetectorRef, inject } from '@angular/core';
+import { ChangeDetectorRef, inject, Injectable } from '@angular/core';
 import { generateGuid } from '@foblex/utils';
-import { CrmNode, Connection } from '../models/crm.models';
-import { HistoryService } from './history.service';
-import { ZoomService } from './zoom.service';
-import { TemporaryNodeService } from './temporary-node.service';
+import { Connection, CrmNode } from '../models/crm.models';
+import { ConfirmationService } from './confirmation.service';
 import { FlowStateService } from './flow-state.service';
 import { FoblexIdManagerService } from './foblex-id-manager.service';
+import { HistoryService } from './history.service';
+import { TemporaryNodeService } from './temporary-node.service';
+import { ZoomService } from './zoom.service';
 
 /**
  * Service responsable de l'orchestration des opérations métier du flow diagram
@@ -24,6 +25,7 @@ export class FlowService {
   private readonly temporaryNodeService = inject(TemporaryNodeService);
   private readonly flowStateService = inject(FlowStateService);
   private readonly foblexIdManager = inject(FoblexIdManagerService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   constructor() {
     console.log('FlowService initialized');
@@ -356,22 +358,44 @@ export class FlowService {
   }
 
   /**
-   * Supprime intelligemment un nœud et gère ses connexions
-   * Si le nœud est au milieu d'un flux, connecte automatiquement les nœuds précédents
-   * aux nœuds suivants pour maintenir la continuité
-   * Pour les BinarySplit et MultiSplit, supprime tous les nœuds et connecteurs successifs
+   * Supprime intelligemment un nœud après confirmation
    * @param nodeId L'ID du nœud à supprimer
    */
   smartDelete(nodeId: string): void {
-    console.log('Intelligent node deletion for node:', nodeId);
-    
-    // Récupérer le nœud à supprimer pour référence
-    const nodeToDelete = this.flowStateService.nodes().find(node => node.id === nodeId);
-    if (!nodeToDelete) {
-      console.error('Node to delete not found:', nodeId);
+    // Vérifier d'abord si le nœud peut être supprimé
+    if (!this.flowStateService.canDeleteNode(nodeId)) {
+      console.warn('Node cannot be deleted:', nodeId);
       return;
     }
+
+    // Récupérer le nœud pour afficher son type dans la confirmation
+    const nodeToDelete = this.flowStateService.nodes().find(node => node.id === nodeId);
+    if (!nodeToDelete) return;
+
+    // Afficher le dialogue de confirmation
+    this.confirmationService.show({
+      title: 'Confirmer la suppression',
+      message: `Êtes-vous sûr de vouloir supprimer ce nœud "${nodeToDelete.type}" et toutes ses connexions ?`,
+      confirmLabel: 'Supprimer',
+      cancelLabel: 'Annuler',
+      onConfirm: () => {
+        // Exécuter la suppression une fois confirmée
+        this.executeSmartDelete(nodeId);
+      }
+    });
+  }
+
+  /**
+   * Exécute la suppression intelligente après confirmation
+   * @private
+   */
+  private executeSmartDelete(nodeId: string): void {
+    // Déplacer ici toute la logique existante de smartDelete
+    console.log('Executing smart delete for node:', nodeId);
     
+    const nodeToDelete = this.flowStateService.nodes().find(node => node.id === nodeId);
+    if (!nodeToDelete) return;
+
     console.log('Node type to delete:', nodeToDelete.type);
     
     // CAS SPÉCIAL: Si c'est un BinarySplit ou MultiSplit, supprimer tous les nœuds successifs
@@ -439,6 +463,9 @@ export class FlowService {
     // ENFIN, supprimer le nœud lui-même
     this.flowStateService.removeNode(nodeId);
     console.log('Removed node:', nodeId);
+    
+    // Réinitialiser la sélection
+    this.flowStateService.updateSelectedNodes([]);
     
     // Sauvegarder l'état pour l'historique
     this.saveState('Suppression intelligente d\'un nœud');
@@ -512,6 +539,9 @@ export class FlowService {
       this._removeNodeWithoutConnectionChecks(nodeIdToDelete);
     }
     
+    // Réinitialiser la sélection
+    this.flowStateService.updateSelectedNodes([]);
+    
     // Sauvegarder l'état pour l'historique
     this.saveState('Suppression d\'un nœud de type Split et tous ses successeurs');
     
@@ -537,4 +567,4 @@ export class FlowService {
     
     console.log(`Removed node ${nodeId} without connection checks`);
   }
-} 
+}

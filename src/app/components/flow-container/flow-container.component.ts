@@ -4,23 +4,23 @@ import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
-  DestroyRef,
   ElementRef,
   HostListener,
   OnInit,
   ViewChild,
-  inject,
-  effect
+  effect,
+  inject
 } from '@angular/core';
-import { FCanvasComponent, FFlowModule, FFlowComponent, FSelectionChangeEvent, FZoomDirective } from '@foblex/flow';
+import { FCanvasComponent, FFlowComponent, FFlowModule, FSelectionChangeEvent, FZoomDirective } from '@foblex/flow';
 import { TemporaryNodeDirective } from '../../directives/temporary-node.directive';
 import { Connection, CrmNode } from '../../models/crm.models';
 import { FlowStateService } from '../../services/flow-state.service';
 import { FlowService } from '../../services/flow.service';
+import { FoblexIdManagerService } from '../../services/foblex-id-manager.service';
 import { TemporaryNodeService } from '../../services/temporary-node.service';
 import { ZoomService } from '../../services/zoom.service';
+import { ConfirmationDialogComponent } from '../confirmation-dialog/confirmation-dialog.component';
 import { FlowToolbarComponent } from '../flow-toolbar/flow-toolbar.component';
-import { FoblexIdManagerService } from '../../services/foblex-id-manager.service';
 
 /**
  * Composant qui encapsule le flow diagram
@@ -32,7 +32,8 @@ import { FoblexIdManagerService } from '../../services/foblex-id-manager.service
     CommonModule,
     FFlowModule,
     TemporaryNodeDirective,
-    FlowToolbarComponent
+    FlowToolbarComponent,
+    ConfirmationDialogComponent
   ],
   templateUrl: './flow-container.component.html',
   styleUrls: ['./flow-container.component.css'],
@@ -166,22 +167,18 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    */
   @HostListener('window:keydown', ['$event'])
   onKeyDown(event: KeyboardEvent): void {
-    // Si la touche Delete/Suppr est pressée et exactement un nœud est sélectionné
+    // Si la touche Delete/Suppr est pressée
     if ((event.key === 'Delete' || event.key === 'Del' || event.keyCode === 46) && 
         !this.flowStateService.draggingItemType()) {
-      console.log('Delete key detected:', event.key, 'keyCode:', event.keyCode);
-      const selectedNodes = this.flowStateService.selectedNodes();
-      console.log('Selected nodes:', selectedNodes);
       
-      if (selectedNodes.length === 1) {
-        console.log('Delete key pressed with exactly one node selected:', selectedNodes[0]);
-        
+      const selectedNodeId = this.flowStateService.getSelectedNodeId();
+      if (selectedNodeId) {
         // Empêcher d'autres actions de l'événement
         event.preventDefault();
         event.stopPropagation();
         
-        // Appeler la suppression intelligente
-        this.flowService.smartDelete(selectedNodes[0]);
+        // Utiliser la suppression intelligente
+        this.flowService.smartDelete(selectedNodeId);
         
         // Effacer la sélection après la suppression
         this.flowStateService.updateSelectedNodes([]);

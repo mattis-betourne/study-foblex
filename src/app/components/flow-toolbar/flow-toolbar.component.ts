@@ -1,7 +1,7 @@
-import { Component, ChangeDetectionStrategy, inject, signal, computed, DestroyRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { SafeHtmlPipe } from '../../pipes/safe-html.pipe';
+import { FlowStateService } from '../../services/flow-state.service';
 import { FlowService } from '../../services/flow.service';
 import { HistoryService } from '../../services/history.service';
 import { ZoomService } from '../../services/zoom.service';
@@ -43,15 +43,36 @@ export class FlowToolbarComponent {
   private readonly zoomService = inject(ZoomService);
   private readonly flowService = inject(FlowService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly flowStateService = inject(FlowStateService);
 
-  /** Actions disponibles dans la toolbar */
-  protected readonly actions = signal<ToolbarAction[]>([]);
-  
+  /** Actions de base de la toolbar */
+  private readonly baseActions = signal<ToolbarAction[]>([]);
+
+  /** Actions calculées incluant le bouton de suppression si un nœud est sélectionné et peut être supprimé */
+  protected readonly actions = computed(() => {
+    const actions = [...this.baseActions()];
+    
+    if (this.flowStateService.canDeleteSelectedNode()) {
+      actions.push({
+        id: 'delete',
+        label: 'Supprimer',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
+        action: () => this.deleteSelectedNode(),
+        tooltip: 'Supprimer le nœud sélectionné',
+        shortcut: 'Suppr',
+        class: 'delete-action bg-red-100 hover:bg-red-200 text-red-600 hover:text-red-700'
+      });
+    }
+    
+    return actions;
+  });
+
   /** États dérivés des services pour les actions */
   protected readonly canUndo = this.historyService.canUndo;
   protected readonly canRedo = this.historyService.canRedo;
   protected readonly canZoomIn = this.zoomService.canZoomIn;
   protected readonly canZoomOut = this.zoomService.canZoomOut;
+  protected readonly canDelete = this.flowStateService.canDeleteSelectedNode;
 
   constructor() {
     this.initializeActions();
@@ -110,7 +131,7 @@ export class FlowToolbarComponent {
       }
     ];
 
-    this.actions.set(actionsList);
+    this.baseActions.set(actionsList);
   }
 
   /**
@@ -201,6 +222,16 @@ export class FlowToolbarComponent {
   }
 
   /**
+   * Supprime le nœud sélectionné
+   */
+  private deleteSelectedNode(): void {
+    const selectedNodeId = this.flowStateService.getSelectedNodeId();
+    if (selectedNodeId) {
+      this.flowService.smartDelete(selectedNodeId);
+    }
+  }
+
+  /**
    * Exécute l'action associée à un bouton
    * @param action L'action à exécuter
    */
@@ -226,7 +257,12 @@ export class FlowToolbarComponent {
       return;
     }
     
+    if (action.id === 'delete' && !this.canDelete()) {
+      console.log('Cannot execute delete action: no single node selected');
+      return;
+    }
+    
     // Exécuter l'action
     action.action();
   }
-} 
+}

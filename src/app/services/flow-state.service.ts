@@ -148,6 +148,27 @@ export class FlowStateService {
   readonly selectedNodes = computed(() => this._state().selectedNodes);
 
   /**
+   * Indique si exactement un nœud est sélectionné
+   */
+  readonly hasExactlyOneNodeSelected = computed(() => this._state().selectedNodes.length === 1);
+  
+  /**
+   * Renvoie l'ID du nœud sélectionné s'il y en a exactement un, sinon null
+   */
+  readonly getSelectedNodeId = computed(() => 
+    this.hasExactlyOneNodeSelected() ? this._state().selectedNodes[0] : null
+  );
+
+  /**
+   * Indique si le nœud sélectionné peut être supprimé
+   */
+  readonly canDeleteSelectedNode = computed(() => {
+    const selectedNodeId = this.getSelectedNodeId();
+    if (!selectedNodeId) return false;
+    return this.canDeleteNode(selectedNodeId);
+  });
+
+  /**
    * Met à jour l'état complet du flow
    * @param state Nouvel état du flow
    */
@@ -641,5 +662,22 @@ export class FlowStateService {
         )
       }
     }));
+  }
+
+  /**
+   * Vérifie si un nœud peut être supprimé
+   * @param nodeId L'ID du nœud à vérifier
+   * @returns true si le nœud peut être supprimé
+   */
+  canDeleteNode(nodeId: string): boolean {
+    const node = this.nodes().find(n => n.id === nodeId);
+    if (!node) return false;
+
+    // Empêcher la suppression du nœud Audience initial
+    if (node.type === 'Audience') {
+      return false;
+    }
+
+    return true;
   }
 }
