@@ -160,31 +160,6 @@ export class FlowService {
   }
 
   /**
-   * Traite la fin d'un glisser-déposer sur un nœud temporaire
-   * @param temporaryNodeId Identifiant du nœud temporaire
-   * @param changeDetectorRef Référence au détecteur de changements
-   */
-  handleDropOnTemporaryNode(temporaryNodeId: string, changeDetectorRef: ChangeDetectorRef): void {
-    console.log('Handling drop on temporary node:', temporaryNodeId);
-    
-    // Déléguer la conversion du nœud temporaire au FlowStateService
-    const newNode = this.flowStateService.convertTemporaryNodeToPermanent(temporaryNodeId);
-    
-    if (newNode) {
-      // Sauvegarder l'historique après la création du nœud permanent
-      this.saveState(`Ajout d'un nœud ${newNode.type}`);
-      
-      // Forcer la mise à jour du composant
-      if (changeDetectorRef) {
-        changeDetectorRef.detectChanges();
-      }
-      
-      // Demander une synchronisation des IDs
-      this.foblexIdManager.requestSync();
-    }
-  }
-
-  /**
    * Crée les nœuds par défaut (Audience et Exit connectés)
    */
   addDefaultNode(): void {
@@ -403,6 +378,8 @@ export class FlowService {
       onConfirm: () => {
         // Exécuter la suppression une fois confirmée
         this.executeSmartDelete(nodeId);
+
+        this.foblexIdManager.requestSync();
       }
     });
   }
