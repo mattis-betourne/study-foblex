@@ -34,7 +34,6 @@ interface ToolbarAction {
   standalone: true,
   imports: [CommonModule, SafeHtmlPipe],
   templateUrl: './flow-toolbar.component.html',
-  styleUrls: ['./flow-toolbar.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FlowToolbarComponent {

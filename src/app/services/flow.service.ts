@@ -327,6 +327,8 @@ export class FlowService {
         return '🔀';
       case 'MultiSplit':
         return '🔱';
+      case 'Exit':
+        return '🔚';
       
       // Communication
       case 'Full Screen':

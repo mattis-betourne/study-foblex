@@ -18,7 +18,6 @@ import { FlowService } from '../../services/flow.service';
     FExternalItemPreviewDirective
   ],
   templateUrl: './builder.component.html',
-  styleUrls: ['./builder.component.css']
 })
 export class BuilderComponent {
   private readonly flowStateService = inject(FlowStateService);

@@ -73,7 +73,8 @@ export class FlowStateService {
           expanded: true,
           items: [
             { type: 'BinarySplit', icon: '🔀', color: 'bg-indigo-600' },
-            { type: 'MultiSplit', icon: '🔱', color: 'bg-teal-600' }
+            { type: 'MultiSplit', icon: '🔱', color: 'bg-teal-600' },
+            { type: 'Exit', icon: '🔚', color: 'bg-red-200' }  // Ajout du type Exit
           ]
         },
         {
@@ -431,6 +432,8 @@ export class FlowStateService {
         return 1;  // Un séparateur binaire a exactement 1 entrée
       case 'MultiSplit':
         return 1;  // Un séparateur multiple a exactement 1 entrée
+      case 'Exit':
+        return 1;  // Un nœud Exit a exactement 1 entrée
       
       // Communication
       case 'Full Screen':
@@ -468,6 +471,8 @@ export class FlowStateService {
         return 2;  // Un séparateur binaire a exactement 2 sorties
       case 'MultiSplit':
         return 5;  // Un séparateur multiple a jusqu'à 5 sorties
+      case 'Exit':
+        return 0;  // Un nœud Exit n'a aucune sortie
       
       // Communication
       case 'Full Screen':
