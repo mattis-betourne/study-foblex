@@ -19,6 +19,9 @@ import { ZoomService } from './zoom.service';
   providedIn: 'root'
 })
 export class FlowService {
+  // Constante pour l'espacement standard entre les nœuds
+  private readonly STANDARD_NODE_OFFSET = 350;
+
   // Services injectés
   private readonly historyService = inject(HistoryService);
   private readonly zoomService = inject(ZoomService);
@@ -183,7 +186,7 @@ export class FlowService {
   }
 
   /**
-   * Crée un nœud par défaut
+   * Crée les nœuds par défaut (Audience et Exit connectés)
    */
   addDefaultNode(): void {
     // Vérifier si des nœuds existent déjà pour éviter la duplication
@@ -195,20 +198,38 @@ export class FlowService {
     console.log('Creating default nodes...');
     
     try {
-      // Crée un nœud Audience par défaut avec une position définie
+      // Crée un nœud Audience par défaut
       const audienceNode: CrmNode = {
         id: generateGuid(),
         type: 'Audience',
         text: 'Audience cible',
-        position: { x: 100, y: 100 },
+        position: { x: 0, y: 0 },
         maxInputs: 0,  // Pas d'entrée
         maxOutputs: 1  // 1 sortie maximum
       };
       
-      // Mise à jour des nœuds
-      this.flowStateService.updateNodes([audienceNode]);
+      // Crée un nœud Exit par défaut avec l'espacement standard de 350px
+      const exitNode: CrmNode = {
+        id: generateGuid(),
+        type: 'Exit',
+        text: 'Fin du parcours',
+        position: { x: audienceNode.position.x + this.STANDARD_NODE_OFFSET, y: audienceNode.position.y },  // Utilise l'espacement standard
+        maxInputs: 1,   // 1 entrée maximum
+        maxOutputs: 0   // Pas de sortie
+      };
       
-      console.log('Default node created successfully');
+      // Crée une connexion entre Audience et Exit
+      const defaultConnection: Connection = {
+        id: generateGuid(),
+        sourceId: `output_${audienceNode.id}`,
+        targetId: `input_${exitNode.id}`
+      };
+      
+      // Mise à jour des nœuds et de la connexion
+      this.flowStateService.updateNodes([audienceNode, exitNode]);
+      this.flowStateService.updateConnections([defaultConnection]);
+      
+      console.log('Default nodes and connection created successfully');
       
       // Sauvegarder l'état APRÈS création des nœuds par défaut
       // et s'assurer que c'est le premier état dans l'historique
