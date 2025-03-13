@@ -35,31 +35,26 @@ export class TemporaryNodeService {
 
     // 5. Supprimer l'ancienne connexion et mettre à jour les IDs Foblex
     this.flowStateService.removeConnection(connectionId);
+
+    // 6. Créer les nouvelles connexions
+    const inputConnection: Connection = {
+      id: generateGuid(),
+      sourceId: existingConnection.sourceId,
+      targetId: `input_${newNode.id}`
+    };
+
+    const outputConnection: Connection = {
+      id: generateGuid(),
+      sourceId: `output_${newNode.id}`,
+      targetId: existingConnection.targetId
+    };
+
+    // 7. Ajouter les nouvelles connexions
+    this.flowStateService.addConnection(inputConnection);
+    this.flowStateService.addConnection(outputConnection);
+
+    // 8. Forcer une nouvelle synchronisation des IDs
     this.foblexIdManager.requestSync();
-
-    // Petit délai pour laisser le temps à la suppression d'être traitée
-    setTimeout(() => {
-      // 6. Créer les nouvelles connexions
-      const inputConnection: Connection = {
-        id: generateGuid(),
-        sourceId: existingConnection.sourceId,
-        targetId: `input_${newNode.id}`
-      };
-
-      const outputConnection: Connection = {
-        id: generateGuid(),
-        sourceId: `output_${newNode.id}`,
-        targetId: existingConnection.targetId
-      };
-
-      // 7. Ajouter les nouvelles connexions
-      this.flowStateService.addConnection(inputConnection);
-      this.flowStateService.addConnection(outputConnection);
-
-      // 8. Forcer une nouvelle synchronisation des IDs
-      setTimeout(() => {
-        this.foblexIdManager.requestSync();
-      }, 0);
-    }, 0);
+  
   }
 }

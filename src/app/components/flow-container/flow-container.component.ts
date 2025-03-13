@@ -85,6 +85,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       
       // Forcer la détection de changements après chaque mise à jour des nœuds
       this.changeDetectorRef.detectChanges();
+      this.flow.redraw();
     });
     
     effect(() => {
@@ -94,6 +95,7 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
       
       // Forcer la détection de changements après chaque mise à jour des connexions
       this.changeDetectorRef.detectChanges();
+      this.flow.redraw();
     });
   }
   
