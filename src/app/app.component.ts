@@ -1,14 +1,9 @@
-import { Component, inject } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { Component, inject } from '@angular/core';
 import { BuilderComponent } from './components/builder/builder.component';
 import { FlowContainerComponent } from './components/flow-container/flow-container.component';
 import { FlowService } from './services/flow.service';
-import { FlowStateService } from './services/flow-state.service';
 
-/**
- * Composant principal de l'application
- */
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -21,36 +16,13 @@ import { FlowStateService } from './services/flow-state.service';
   styleUrls: ['./app.component.css']
 })
 export class AppComponent {
-  title = 'study-foblex';
-  flowService = inject(FlowService);
-  flowStateService = inject(FlowStateService);
+  private readonly flowService = inject(FlowService);
   
-  /** État de la sidebar (ouvert par défaut) */
-  isSidebarOpen = true;
-  
-  /**
-   * Gère l'état de la sidebar
-   * @param isOpen État d'ouverture de la sidebar
-   */
-  toggleSidebar(isOpen: boolean): void {
-    this.isSidebarOpen = isOpen;
-  }
-  
-  /**
-   * Démarrer le drag d'un élément depuis le builder
-   * @param itemType Type de l'élément en cours de drag
-   */
   onItemDragStart(itemType: string): void {
-    console.log('App component received itemDragStart event with type:', itemType);
-    // Utilise la nouvelle méthode startDragging du FlowService
     this.flowService.startDragging(itemType);
   }
   
-  /**
-   * Terminer le drag sans créer de nœud
-   */
   onItemDragEnd(): void {
-    // Utilise la nouvelle méthode endDragging du FlowService
     this.flowService.endDragging();
   }
 }

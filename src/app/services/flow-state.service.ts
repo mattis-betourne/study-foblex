@@ -1,6 +1,23 @@
 import { computed, Injectable, signal } from '@angular/core';
-import { Connection, CrmNode } from '../models/crm.models';
 import { generateGuid } from '@foblex/utils';
+import { Connection, CrmNode } from '../models/crm.models';
+
+export interface BuilderCategory {
+  name: string;
+  expanded: boolean;
+  items: BuilderItem[];
+}
+
+export interface BuilderItem {
+  type: string;
+  icon: string;
+  color: string;
+}
+
+export interface BuilderState {
+  isOpen: boolean;
+  categories: BuilderCategory[];
+}
 
 /**
  * Interface représentant l'état du flow
@@ -19,6 +36,7 @@ export interface FlowState {
     isCreatingNode: boolean;
   };
   selectedNodes: string[];
+  builder: BuilderState;
 }
 
 /**
@@ -46,7 +64,37 @@ export class FlowStateService {
       draggingItemType: null,
       isCreatingNode: false
     },
-    selectedNodes: []
+    selectedNodes: [],
+    builder: {
+      isOpen: true,
+      categories: [
+        {
+          name: 'Execution',
+          expanded: true,
+          items: [
+            { type: 'BinarySplit', icon: '🔀', color: 'bg-indigo-600' },
+            { type: 'MultiSplit', icon: '🔱', color: 'bg-teal-600' }
+          ]
+        },
+        {
+          name: 'Communication',
+          expanded: true,
+          items: [
+            { type: 'Full Screen', icon: '📱', color: 'bg-blue-500' },
+            { type: 'SMS', icon: '💬', color: 'bg-green-500' },
+            { type: 'Push', icon: '🔔', color: 'bg-purple-500' },
+            { type: 'Email', icon: '✉️', color: 'bg-orange-500' }
+          ]
+        },
+        {
+          name: 'Rewards',
+          expanded: true,
+          items: [
+            { type: 'Freebet', icon: '🎁', color: 'bg-red-500' }
+          ]
+        }
+      ]
+    }
   });
 
   /**
@@ -109,7 +157,8 @@ export class FlowStateService {
       connections: structuredClone(state.connections),
       zoom: structuredClone(state.zoom),
       temporaryElements: structuredClone(state.temporaryElements),
-      selectedNodes: state.selectedNodes
+      selectedNodes: state.selectedNodes,
+      builder: state.builder
     });
   }
 
@@ -545,5 +594,52 @@ export class FlowStateService {
     
     console.log(`Converted temporary node ${temporaryNodeId} to permanent node ${newNode.id}`);
     return newNode;
+  }
+
+  /**
+   * État du builder en lecture seule
+   */
+  readonly builderState = computed(() => this._state().builder);
+
+  /**
+   * Catégories du builder en lecture seule
+   */
+  readonly builderCategories = computed(() => this._state().builder.categories);
+
+  /**
+   * Indique si le builder est ouvert en lecture seule
+   */
+  readonly isBuilderOpen = computed(() => this._state().builder.isOpen);
+
+  /**
+   * Met à jour l'état d'ouverture du builder
+   * @param isOpen Nouvel état
+   */
+  updateBuilderOpen(isOpen: boolean): void {
+    this._state.update(state => ({
+      ...state,
+      builder: {
+        ...state.builder,
+        isOpen
+      }
+    }));
+  }
+
+  /**
+   * Bascule l'état d'expansion d'une catégorie du builder
+   * @param categoryName Nom de la catégorie
+   */
+  toggleBuilderCategory(categoryName: string): void {
+    this._state.update(state => ({
+      ...state,
+      builder: {
+        ...state.builder,
+        categories: state.builder.categories.map(cat => 
+          cat.name === categoryName 
+            ? { ...cat, expanded: !cat.expanded }
+            : cat
+        )
+      }
+    }));
   }
 }

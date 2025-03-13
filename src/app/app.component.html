@@ -1,11 +1,6 @@
 <div class="h-screen w-screen overflow-hidden bg-gray-100 relative">
-  <!-- Conteneur principal du flow diagram -->
   <app-flow-container></app-flow-container>
-  
-  <!-- Composant Builder (sidebar) -->
   <app-builder 
-    [isOpen]="isSidebarOpen" 
-    (toggleSidebar)="toggleSidebar($event)"
     (itemDragStart)="onItemDragStart($event)"
     (itemDragEnd)="onItemDragEnd()">
   </app-builder>

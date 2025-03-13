@@ -1,4 +1,4 @@
-import { Injectable, signal, computed, inject } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
 import { FlowState, FlowStateService } from './flow-state.service';
 
 /**
@@ -134,6 +134,7 @@ export class HistoryService {
       zoom: structuredClone(state.zoom),
       temporaryElements: structuredClone(state.temporaryElements),
       selectedNodes: state.selectedNodes || [],
+      builder: structuredClone(state.builder)
     };
   }
-} 
+}
