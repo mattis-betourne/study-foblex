@@ -167,8 +167,8 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
    */
   @HostListener('window:keydown', ['$event'])
   onKeyDown(event: KeyboardEvent): void {
-    // Si la touche Delete/Suppr est pressée
-    if ((event.key === 'Delete' || event.key === 'Del' || event.keyCode === 46) && 
+    // Si la touche Delete/Suppr ou Backspace est pressée
+    if ((event.key === 'Delete' || event.key === 'Del' || event.key === 'Backspace' || event.keyCode === 46) && 
         !this.flowStateService.draggingItemType()) {
       
       const selectedNodeId = this.flowStateService.getSelectedNodeId();
