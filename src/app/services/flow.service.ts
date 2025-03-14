@@ -463,8 +463,9 @@ export class FlowService {
     this.flowStateService.removeNode(nodeId);
     console.log('Removed node:', nodeId);
     
-    // Recalculer les positions des nœuds pour maintenir un espacement régulier
-    this.flowStateService.recalculateAllNodesPositions(this.STANDARD_NODE_OFFSET);
+    // AMÉLIORATION: Utiliser le recalcul intelligent au lieu du recalcul standard
+    // Recalculer intelligemment les positions des nœuds en préservant notre grille
+    this.flowStateService.smartRecalculatePositionsAfterDeletion(nodeId);
     
     // Réinitialiser la sélection
     this.flowStateService.updateSelectedNodes([]);
@@ -541,8 +542,9 @@ export class FlowService {
       this._removeNodeWithoutConnectionChecks(nodeIdToDelete);
     }
     
-    // Recalculer les positions des nœuds pour maintenir un espacement régulier
-    this.flowStateService.recalculateAllNodesPositions(this.STANDARD_NODE_OFFSET);
+    // AMÉLIORATION: Utiliser le recalcul intelligent au lieu du recalcul standard
+    // Recalculer intelligemment les positions des nœuds en préservant notre grille
+    this.flowStateService.smartRecalculatePositionsAfterDeletion(nodeId);
     
     // Réinitialiser la sélection
     this.flowStateService.updateSelectedNodes([]);

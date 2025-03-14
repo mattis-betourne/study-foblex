@@ -985,4 +985,126 @@ export class FlowStateService {
     
     return hasChanges;
   }
+
+  /**
+   * Recalcule intelligemment les positions des nœuds après une suppression
+   * en respectant la grille de 250 unités et en maintenant les relations parent-enfant
+   * @param removedNodeId ID du nœud supprimé (optionnel)
+   * @param spacing Espacement horizontal entre nœuds (250 par défaut)
+   * @param shouldPreserveY Indique s'il faut préserver la position Y des nœuds (true par défaut)
+   * @returns true si des positions ont été modifiées
+   */
+  smartRecalculatePositionsAfterDeletion(
+    removedNodeId?: string, 
+    spacing: number = 250,
+    shouldPreserveY: boolean = true
+  ): boolean {
+    console.log('Smart recalculation of positions after deletion');
+    
+    // Obtenir les nœuds actuels
+    const currentNodes = this.nodes();
+    
+    // Si aucun nœud ou un seul, rien à réorganiser
+    if (currentNodes.length <= 1) return false;
+    
+    // Construction d'un graphe de dépendances
+    const graph: {[nodeId: string]: string[]} = {};
+    const reverseGraph: {[nodeId: string]: string[]} = {};
+    
+    // Remplir le graphe avec les connexions
+    this.connections().forEach(conn => {
+      const sourceId = conn.sourceId.replace('output_', '');
+      const targetId = conn.targetId.replace('input_', '');
+      
+      if (!graph[sourceId]) graph[sourceId] = [];
+      graph[sourceId].push(targetId);
+      
+      if (!reverseGraph[targetId]) reverseGraph[targetId] = [];
+      reverseGraph[targetId].push(sourceId);
+    });
+    
+    // Trouver tous les nœuds racines (sans parents)
+    const rootNodes = currentNodes.filter(node => 
+      !reverseGraph[node.id] || reverseGraph[node.id].length === 0
+    );
+    
+    if (rootNodes.length === 0) {
+      console.warn('No root nodes found, using standard recalculation');
+      return false;
+    }
+    
+    // Fonction pour recalculer récursivement les positions
+    const processedNodes = new Set<string>();
+    const updatedPositions: {[nodeId: string]: {x: number, y: number}} = {};
+    
+    const updateChildPositions = (
+      nodeId: string, 
+      level: number = 0,
+      parentY: number = 0,
+      isFirstChild: boolean = true
+    ) => {
+      if (processedNodes.has(nodeId)) return;
+      processedNodes.add(nodeId);
+      
+      const node = currentNodes.find(n => n.id === nodeId);
+      if (!node) return;
+      
+      // Mettre à jour la position X basée sur le niveau
+      const newX = level * spacing;
+      
+      // Déterminer la position Y
+      let newY = node.position.y;
+      if (!shouldPreserveY) {
+        // Si c'est le premier enfant, utiliser la même position Y que le parent
+        // Sinon, calculer un décalage
+        if (isFirstChild) {
+          newY = parentY;
+        } else {
+          // Calculer un décalage vertical basé sur la position dans la liste des enfants
+          const siblingIndex = reverseGraph[nodeId] ? 
+            reverseGraph[nodeId].indexOf(nodeId) : 0;
+          newY = parentY + (siblingIndex * 150);
+        }
+      }
+      
+      // Stocker la nouvelle position
+      updatedPositions[nodeId] = { x: newX, y: newY };
+      
+      // Traiter les enfants de ce nœud
+      const children = graph[nodeId] || [];
+      children.forEach((childId, index) => {
+        updateChildPositions(childId, level + 1, newY, index === 0);
+      });
+    };
+    
+    // Commencer par les nœuds racines
+    rootNodes.forEach((rootNode, index) => {
+      if (!processedNodes.has(rootNode.id)) {
+        updateChildPositions(rootNode.id, 0, rootNode.position.y);
+      }
+    });
+    
+    // Vérifier si des positions ont été modifiées
+    let hasChanges = Object.keys(updatedPositions).length > 0;
+    
+    if (hasChanges) {
+      // Appliquer les nouvelles positions
+      const updatedNodes = currentNodes.map(node => {
+        if (updatedPositions[node.id]) {
+          return {
+            ...node,
+            position: updatedPositions[node.id]
+          };
+        }
+        return node;
+      });
+      
+      this.updateNodes(updatedNodes);
+      console.log('Node positions recalculated smartly after deletion');
+    } else {
+      console.log('No position changes needed after deletion');
+    }
+    
+    return hasChanges;
+  }
 }
