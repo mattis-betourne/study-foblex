@@ -513,6 +513,44 @@ export class FlowService {
     
     console.log('Nodes to delete:', Array.from(nodesToDelete));
     
+    // RÈGLE MÉTIER: Préserver au moins un Exit et le reconnecter au parent du Split
+    
+    // 1. Trouver le nœud parent (source) du Split
+    const inputId = `input_${nodeId}`;
+    const parentConnections = this.flowStateService.connections().filter(conn => conn.targetId === inputId);
+    let parentNodeId: string | undefined;
+    let parentOutputId: string | undefined;
+    
+    if (parentConnections.length > 0) {
+      // Prendre la première connexion entrante comme source du parent
+      parentOutputId = parentConnections[0].sourceId;
+      parentNodeId = parentOutputId.replace('output_', '');
+      console.log(`Parent node identified: ${parentNodeId}`);
+    } else {
+      console.warn('No parent node found for the Split node');
+    }
+    
+    // 2. Trouver tous les nœuds Exit qui seront supprimés
+    const exitNodesToDelete = Array.from(nodesToDelete)
+      .map(id => this.flowStateService.nodes().find(n => n.id === id))
+      .filter(node => node && node.type === 'Exit')
+      .map(node => node!);
+    
+    console.log(`Found ${exitNodesToDelete.length} Exit nodes to be deleted`);
+    
+    // 3. Si nous avons des Exit à supprimer et un parent identifié, en préserver un
+    let preservedExit: CrmNode | undefined;
+    
+    if (exitNodesToDelete.length > 0 && parentNodeId) {
+      // Choisir le premier Exit (nous pourrions avoir une stratégie plus sophistiquée si nécessaire)
+      preservedExit = exitNodesToDelete[0];
+      
+      // Le retirer de la liste des nœuds à supprimer
+      nodesToDelete.delete(preservedExit.id);
+      
+      console.log(`Preserving Exit node: ${preservedExit.id}`);
+    }
+    
     // Première étape: collecter toutes les connexions à supprimer
     const connectionsToDelete = new Set<string>();
     
@@ -531,15 +569,54 @@ export class FlowService {
     
     console.log('Connections to delete:', Array.from(connectionsToDelete));
     
+    // 4. Si nous avons un Exit préservé et un parent, créer une connexion directe entre eux
+    if (preservedExit && parentOutputId) {
+      // Créer une nouvelle connexion directe entre le parent et l'Exit préservé
+      const newConnection: Connection = {
+        id: generateGuid(),
+        sourceId: parentOutputId,
+        targetId: `input_${preservedExit.id}`
+      };
+      
+      // Ajouter la nouvelle connexion
+      this.flowStateService.addConnection(newConnection);
+      console.log(`Created new connection from parent to preserved Exit: ${newConnection.id}`);
+    }
+    
     // Supprimer d'abord toutes les connexions
     for (const connId of connectionsToDelete) {
       this.flowStateService.removeConnection(connId);
     }
     
-    // Puis supprimer tous les nœuds
+    // Puis supprimer tous les nœuds (sauf l'Exit préservé)
     for (const nodeIdToDelete of nodesToDelete) {
       // Utiliser removeNode sans les vérifications de connexions puisqu'elles ont déjà été supprimées
       this._removeNodeWithoutConnectionChecks(nodeIdToDelete);
+    }
+    
+    // 5. Si nous avons un Exit préservé, le repositionner pour remplacer le Split supprimé
+    if (preservedExit) {
+      // Obtenir le nœud Split qui est supprimé
+      const splitNode = this.flowStateService.nodes().find(n => n.id === nodeId);
+      
+      if (splitNode) {
+        // Mettre à jour la position de l'Exit préservé
+        const updatedNodes = this.flowStateService.nodes().map(node => {
+          if (node.id === preservedExit.id) {
+            return {
+              ...node,
+              position: { 
+                x: splitNode.position.x, // Même position X que le Split
+                y: splitNode.position.y  // Même position Y que le Split
+              }
+            };
+          }
+          return node;
+        });
+        
+        this.flowStateService.updateNodes(updatedNodes);
+        console.log(`Repositioned preserved Exit to Split's position`);
+      }
     }
     
     // AMÉLIORATION: Utiliser le recalcul intelligent au lieu du recalcul standard
