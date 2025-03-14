@@ -17,6 +17,7 @@
         "build": {
           "builder": "@angular-devkit/build-angular:application",
           "options": {
+            "preserveSymlinks": true,
             "outputPath": "dist/study-foblex",
             "index": "src/index.html",
             "browser": "src/main.ts",
@@ -78,6 +79,7 @@
         "test": {
           "builder": "@angular-devkit/build-angular:karma",
           "options": {
+            "preserveSymlinks": true,
             "polyfills": [
               "zone.js",
               "zone.js/testing"
