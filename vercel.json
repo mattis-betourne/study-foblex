@@ -1,6 +1,0 @@
-{
-  "buildCommand": "npm run build:vercel",
-  "outputDirectory": "dist/study-foblex",
-  "framework": "angular",
-  "installCommand": "npm ci"
-} 
