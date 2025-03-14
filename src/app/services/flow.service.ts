@@ -463,6 +463,9 @@ export class FlowService {
     this.flowStateService.removeNode(nodeId);
     console.log('Removed node:', nodeId);
     
+    // Recalculer les positions des nœuds pour maintenir un espacement régulier
+    this.flowStateService.recalculateAllNodesPositions(this.STANDARD_NODE_OFFSET);
+    
     // Réinitialiser la sélection
     this.flowStateService.updateSelectedNodes([]);
     
@@ -537,6 +540,9 @@ export class FlowService {
       // Utiliser removeNode sans les vérifications de connexions puisqu'elles ont déjà été supprimées
       this._removeNodeWithoutConnectionChecks(nodeIdToDelete);
     }
+    
+    // Recalculer les positions des nœuds pour maintenir un espacement régulier
+    this.flowStateService.recalculateAllNodesPositions(this.STANDARD_NODE_OFFSET);
     
     // Réinitialiser la sélection
     this.flowStateService.updateSelectedNodes([]);

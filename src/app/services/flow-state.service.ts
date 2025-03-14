@@ -628,29 +628,58 @@ export class FlowStateService {
    * @param newNode La nouvelle node à insérer
    */
   recalculateNodesPositions(insertAfterNodeId: string, newNode: CrmNode): void {
+    console.log(`Recalculating node positions after inserting node after ${insertAfterNodeId}`);
+    
+    // Ajouter d'abord le nouveau nœud à la liste
+    const currentNodes = [...this.nodes(), newNode];
+    
+    // Identifier les branches et recalculer les positions comme dans recalculateAllNodesPositions
     const HORIZONTAL_SPACING = 250;
+    const yThreshold = 50;
+    const branches: { [key: string]: CrmNode[] } = {};
     
-    // Trier les nodes par position X
-    const sortedNodes = [...this.nodes()].sort((a, b) => a.position.x - b.position.x);
-    
-    // Trouver l'index d'insertion
-    const insertIndex = sortedNodes.findIndex(n => n.id === insertAfterNodeId);
-    if (insertIndex === -1) return;
-    
-    // Insérer la nouvelle node
-    const updatedNodes = [
-      ...sortedNodes.slice(0, insertIndex + 1),
-      newNode,
-      ...sortedNodes.slice(insertIndex + 1)
-    ];
-    
-    // Recalculer les positions
-    updatedNodes.forEach((node, index) => {
-      node.position.x = index * HORIZONTAL_SPACING;
+    // Regrouper les nœuds par branches
+    currentNodes.forEach(node => {
+      const branchKey = Object.keys(branches).find(key => {
+        const branchY = parseInt(key);
+        return Math.abs(node.position.y - branchY) < yThreshold;
+      });
+      
+      if (branchKey) {
+        branches[branchKey].push(node);
+      } else {
+        branches[node.position.y.toString()] = [node];
+      }
     });
     
-    // Mettre à jour les nodes
+    // Optimiser l'espacement vertical entre branches
+    const optimizedBranches = this.optimizeBranchSpacing(branches);
+    
+    // Pour chaque branche, trier les nœuds horizontalement et recalculer les positions X
+    const updatedNodes: CrmNode[] = [];
+    
+    Object.entries(optimizedBranches).forEach(([yKey, branchNodes]) => {
+      const y = parseFloat(yKey);
+      
+      // Trier les nœuds de cette branche par position X
+      const sortedBranchNodes = [...branchNodes].sort((a, b) => a.position.x - b.position.x);
+      
+      // Recalculer les positions X tout en maintenant Y
+      sortedBranchNodes.forEach((node, index) => {
+        updatedNodes.push({
+          ...node,
+          position: {
+            x: index * HORIZONTAL_SPACING,
+            y: y
+          }
+        });
+      });
+    });
+    
+    // Mettre à jour les nœuds
     this.updateNodes(updatedNodes);
+    
+    console.log('Node positions recalculated with spacing:', HORIZONTAL_SPACING);
   }
 
   /**
@@ -721,10 +750,239 @@ export class FlowStateService {
     if (!node) return false;
 
     // Empêcher la suppression du nœud Audience initial
-    if (node.type === 'Audience') {
+    if (node.type === 'Audience' || node.type === 'Exit') {
       return false;
     }
 
     return true;
+  }
+
+  /**
+   * Recalcule les positions de tous les nœuds après une suppression
+   * @param spacing Espacement horizontal entre les nœuds (par défaut 250px)
+   */
+  recalculateAllNodesPositions(spacing: number = 250): void {
+    // Obtenir les nœuds actuels
+    const currentNodes = this.nodes();
+    
+    // Si aucun nœud ou un seul, rien à réorganiser
+    if (currentNodes.length <= 1) return;
+    
+    // Identifier les différentes branches basées sur la position Y
+    // Un seuil de 50px est utilisé pour considérer des nœuds comme étant sur la même ligne
+    const yThreshold = 50;
+    const branches: { [key: string]: CrmNode[] } = {};
+    
+    // Regrouper les nœuds par branches approximativement basées sur Y
+    currentNodes.forEach(node => {
+      // Trouver une branche existante proche de la position Y du nœud
+      const branchKey = Object.keys(branches).find(key => {
+        const branchY = parseInt(key);
+        return Math.abs(node.position.y - branchY) < yThreshold;
+      });
+      
+      if (branchKey) {
+        // Ajouter à une branche existante
+        branches[branchKey].push(node);
+      } else {
+        // Créer une nouvelle branche
+        branches[node.position.y.toString()] = [node];
+      }
+    });
+    
+    // Optimiser l'espacement vertical entre branches si nécessaire
+    const optimizedBranches = this.optimizeBranchSpacing(branches);
+    
+    console.log('Identified branches:', Object.keys(optimizedBranches).length);
+    
+    // Pour chaque branche, trier les nœuds horizontalement et recalculer les positions X
+    const updatedNodes: CrmNode[] = [];
+    
+    Object.entries(optimizedBranches).forEach(([yKey, branchNodes]) => {
+      const y = parseFloat(yKey);
+      
+      // Trier les nœuds de cette branche par position X
+      const sortedBranchNodes = [...branchNodes].sort((a, b) => a.position.x - b.position.x);
+      
+      // Recalculer les positions X tout en maintenant Y
+      sortedBranchNodes.forEach((node, index) => {
+        updatedNodes.push({
+          ...node,
+          position: {
+            x: index * spacing,
+            y: y
+          }
+        });
+      });
+    });
+    
+    // Mettre à jour les nœuds
+    this.updateNodes(updatedNodes);
+    
+    console.log('Node positions recalculated with spacing:', spacing);
+  }
+  
+  /**
+   * Optimise l'espacement vertical entre les branches
+   * @param branches Branches à optimiser
+   * @param minSpacing Espacement vertical minimum entre les branches
+   * @returns Branches avec positions Y optimisées
+   * @private
+   */
+  private optimizeBranchSpacing(
+    branches: { [key: string]: CrmNode[] }, 
+    minSpacing: number = 100
+  ): { [key: string]: CrmNode[] } {
+    // Si pas assez de branches pour optimiser
+    if (Object.keys(branches).length <= 1) return branches;
+    
+    // Obtenir un tableau des positions Y ordonnées
+    const yPositions = Object.keys(branches).map(y => parseFloat(y)).sort((a, b) => a - b);
+    
+    // Vérifier si des ajustements sont nécessaires
+    let needsOptimization = false;
+    for (let i = 1; i < yPositions.length; i++) {
+      if (yPositions[i] - yPositions[i - 1] < minSpacing) {
+        needsOptimization = true;
+        break;
+      }
+    }
+    
+    // Si aucun ajustement n'est nécessaire, retourner les branches telles quelles
+    if (!needsOptimization) return branches;
+    
+    // Créer de nouvelles positions Y optimisées
+    const optimizedBranches: { [key: string]: CrmNode[] } = {};
+    
+    // Assigner une nouvelle position Y à chaque branche
+    yPositions.forEach((originalY, index) => {
+      const newY = index * minSpacing;
+      optimizedBranches[newY.toString()] = branches[originalY.toString()];
+    });
+    
+    console.log('Branch positions optimized with min spacing:', minSpacing);
+    return optimizedBranches;
+  }
+
+  /**
+   * Vérifie et répare l'intégrité de l'état du flow
+   * - Vérifie que tous les nœuds et connexions ont des IDs
+   * - Vérifie que les connexions référencent des nœuds valides
+   * - Vérifie que les positions des nœuds sont cohérentes
+   * @returns true si des réparations ont été effectuées
+   */
+  validateAndRepairState(): boolean {
+    console.log('Validating and repairing flow state');
+    let hasChanges = false;
+    
+    // 1. Vérifier les IDs des nœuds
+    const nodesWithoutIds = this._state().nodes.filter(node => !node.id);
+    if (nodesWithoutIds.length > 0) {
+      console.warn('Found nodes without IDs:', nodesWithoutIds.length);
+      this._state.update(state => ({
+        ...state,
+        nodes: state.nodes.map(node => {
+          if (!node.id) {
+            hasChanges = true;
+            return { ...node, id: generateGuid() };
+          }
+          return node;
+        })
+      }));
+    }
+    
+    // 2. Vérifier les IDs des connexions
+    const connectionsWithoutIds = this._state().connections.filter(conn => !conn.id);
+    if (connectionsWithoutIds.length > 0) {
+      console.warn('Found connections without IDs:', connectionsWithoutIds.length);
+      this._state.update(state => ({
+        ...state,
+        connections: state.connections.map(conn => {
+          if (!conn.id) {
+            hasChanges = true;
+            return { ...conn, id: generateGuid() };
+          }
+          return conn;
+        })
+      }));
+    }
+    
+    // 3. Vérifier que les connexions référencent des nœuds valides
+    const nodeIds = new Set(this._state().nodes.map(node => node.id));
+    const invalidConnections = this._state().connections.filter(conn => {
+      const sourceNodeId = conn.sourceId.replace('output_', '');
+      const targetNodeId = conn.targetId.replace('input_', '');
+      return !nodeIds.has(sourceNodeId) || !nodeIds.has(targetNodeId);
+    });
+    
+    if (invalidConnections.length > 0) {
+      console.warn('Found invalid connections:', invalidConnections.length);
+      this._state.update(state => ({
+        ...state,
+        connections: state.connections.filter(conn => {
+          const sourceNodeId = conn.sourceId.replace('output_', '');
+          const targetNodeId = conn.targetId.replace('input_', '');
+          const isValid = nodeIds.has(sourceNodeId) && nodeIds.has(targetNodeId);
+          if (!isValid) hasChanges = true;
+          return isValid;
+        })
+      }));
+    }
+    
+    // 4. Vérifier la cohérence des positions des nœuds
+    const nodesWithInvalidPositions = this._state().nodes.filter(
+      node => !node.position || typeof node.position.x !== 'number' || typeof node.position.y !== 'number'
+    );
+    
+    if (nodesWithInvalidPositions.length > 0) {
+      console.warn('Found nodes with invalid positions:', nodesWithInvalidPositions.length);
+      this._state.update(state => ({
+        ...state,
+        nodes: state.nodes.map(node => {
+          if (!node.position || typeof node.position.x !== 'number' || typeof node.position.y !== 'number') {
+            hasChanges = true;
+            return { 
+              ...node, 
+              position: { x: 0, y: 0 } 
+            };
+          }
+          return node;
+        })
+      }));
+      
+      // Si des positions ont été réparées, recalculer toutes les positions
+      this.recalculateAllNodesPositions();
+    }
+    
+    // 5. Vérifier que les nœuds ont des propriétés maxInputs et maxOutputs
+    const nodesWithInvalidIO = this._state().nodes.filter(
+      node => node.maxInputs === undefined || node.maxOutputs === undefined
+    );
+    
+    if (nodesWithInvalidIO.length > 0) {
+      console.warn('Found nodes with invalid IO properties:', nodesWithInvalidIO.length);
+      this._state.update(state => ({
+        ...state,
+        nodes: state.nodes.map(node => {
+          if (node.maxInputs === undefined || node.maxOutputs === undefined) {
+            hasChanges = true;
+            return { 
+              ...node, 
+              maxInputs: node.maxInputs ?? this.getDefaultMaxInputs(node.type),
+              maxOutputs: node.maxOutputs ?? this.getDefaultMaxOutputs(node.type)
+            };
+          }
+          return node;
+        })
+      }));
+    }
+    
+    if (hasChanges) {
+      console.log('State repairs completed successfully');
+    } else {
+      console.log('No state repairs needed');
+    }
+    
+    return hasChanges;
   }
 }

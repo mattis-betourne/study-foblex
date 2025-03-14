@@ -239,11 +239,33 @@ export class FlowContainerComponent implements OnInit, AfterViewInit {
     }
   }
 
+  /**
+   * Gestionnaire pour les drops sur les connexions
+   * @param connectionId ID de la connexion sur laquelle le drop a eu lieu
+   */
   onDropOnConnection(connectionId: string): void {
     const itemType = this.flowStateService.draggingItemType();
-    if (!itemType) return;
+    if (!itemType) {
+      console.warn('No dragging item type detected during drop on connection');
+      return;
+    }
     
+    console.log(`Drop detected on connection ${connectionId} with item type ${itemType}`);
+    
+    // Traiter le drop via le service dédié
     this.temporaryNodeService.handleDropOnConnection(connectionId, itemType);
+    
+    // Nettoyer l'état de drag 
+    this.flowStateService.updateDraggingItemType(null);
+    
+    // Forcer la détection des changements
     this.changeDetectorRef.detectChanges();
+    
+    // Force une seconde détection des changements après un délai pour s'assurer 
+    // que tous les éléments du DOM sont bien mis à jour
+    setTimeout(() => {
+      this.changeDetectorRef.detectChanges();
+      console.log('Forced change detection after drop operation');
+    }, 100);
   }
 }
